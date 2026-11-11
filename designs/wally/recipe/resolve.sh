@@ -43,7 +43,21 @@ tests/coverage64gc/ieu.S
 tests/coverage64gc/fpu.S
 tests/coverage64gc/WALLY-init-lib.h
 tests/coverage64gc/WALLY-selfcheck.h
-examples/link/link.ld"
+examples/link/link.ld
+benchmarks/coremark/build.sh
+benchmarks/coremark/crt.S
+benchmarks/coremark/core_portme.c
+benchmarks/coremark/core_portme.h
+benchmarks/coremark/ee_printf.c
+config/rv64gc/act/link.ld
+config/rv64gc/act/rvmodel_macros.h
+addins/coremark/core_list_join.c
+addins/coremark/core_main.c
+addins/coremark/core_matrix.c
+addins/coremark/core_state.c
+addins/coremark/core_util.c
+addins/coremark/coremark.h
+addins/coremark/LICENSE.md"
 { cat "$here/variants/rv64gc/synth.f" "$here/variants/rv64gc/sim.f" | grep -v '^src/generated/' | sed 's#^src/##'; echo "$extra"; } | sort -u | while read -r f; do
   mkdir -p "$out/$(dirname "$f")"
   cp -p "$cvw/$f" "$out/$f"

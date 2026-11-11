@@ -15,3 +15,13 @@ for t in ieu fpu; do
   mv "$t.elf" "$here/sim/$t.elf"
   rm -f "$t.s" "$t.o"
 done
+
+# CoreMark: upstream benchmarks/coremark/Makefile, target $(elf), with CONFIG=rv64gc XLEN=64
+# ARCH=rv64gc_zba_zbb_zbc_zbs ABI=lp64 ITERATIONS=10 (the example of benchmarks/coremark/README.md) and
+# -DWALLY_HPM. build.sh is run through bash, because its shebang is /bin/bash. The extra
+# -ffile-prefix-map keeps the build path out of the image.
+out=$(mktemp -d)
+WALLY="$here/src" OUT="$out" bash "$here/src/benchmarks/coremark/build.sh" rv64gc "$here/src/config/rv64gc/act" \
+  rv64gc_zba_zbb_zbc_zbs lp64 10 -DWALLY_HPM "-ffile-prefix-map=$here/src=src"
+mv "$out/coremark.elf" "$here/sim/coremark.elf"
+rm -rf "$out"

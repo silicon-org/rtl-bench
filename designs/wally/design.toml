@@ -7,8 +7,26 @@ description = "Configurable five-stage RISC-V core with caches, MMU and standard
 repository = "https://github.com/openhwfoundation/cvw"
 commit = "90259bdca99c187eb1d482837d54f5c618884ef2"
 mode = "vendored"
-licence = "Apache-2.0 WITH SHL-2.1"      # SPDX-License-Identifier line of LICENSE and of every source file
-licence_files = ["src/LICENSE"]
+# Most files: Apache-2.0 WITH SHL-2.1 (SPDX line of src/LICENSE and of the sources). Five files carry
+# an MIT notice instead (see recipe/README.md); they stand in as the licence files of MIT.
+licence = "(Apache-2.0 WITH SHL-2.1) AND MIT"
+licence_files = [
+  "src/LICENSE",
+  "licences/Apache-2.0.txt",
+  "licences/SHL-2.1.txt",
+  "src/src/generic/binencoder.sv",
+  "src/src/generic/decoder.sv",
+  "src/src/generic/priorityonehot.sv",
+  "src/src/mmu/hptw.sv",
+  "src/src/privileged/privileged.sv",
+]
+
+# The CoreMark sources are a submodule of upstream (addins/coremark).
+[[source.dependency]]
+repository = "https://github.com/eembc/coremark"
+commit = "f3e8f2e0941e42961aadcc52750b1b5577c157c9"
+licence = "Apache-2.0"                   # header of every source file; LICENSE.md is the EEMBC trademark agreement
+licence_files = ["licences/Apache-2.0.txt", "src/addins/coremark/LICENSE.md"]
 
 [[variant]]
 id = "rv64gc"
@@ -43,13 +61,17 @@ false_paths = [{ from = "reset" }]       # upstream synthDC/scripts/synth.tcl: s
 simulator = "verilator"
 top = "testbench"
 files = "variants/rv64gc/sim.f"
+# Warnings of the upstream sources must not stop the build: PrintHPMCounters=1 draws WIDTHEXPAND and
+# WIDTHTRUNC at testbench/common/loggers.sv:39, which is upstream code.
+verilator_flags = ["-Wno-fatal"]
 exclude = ["src/generated/wallypipelinedcorewrapper.sv"]
 parameters = { PrintHPMCounters = "1" }
 dut = "testbench.dut.core"
 support = ["src/testbench/Makefile", "src/testbench/mempipeprobe.svh", "src/bin/elf2hex", "src/bin/extractFunctionRadix.sh"]
 path = ["src/bin"]
 env_dirs = { WALLY = "src" }
-args = ["+TEST={workload}", "+ElfFile={image}"]
+# The testbench writes the UART to a file; /dev/stdout puts it in the output that the pass check reads.
+args = ["+TEST={workload}", "+ElfFile={image}", "+UART_LOG=1", "+UART_LOG_FILE=/dev/stdout"]
 cycles_pattern = 'Cnt\[ ?0\] = +([0-9]+) Mcycle'
 
 # max_cycles is a limit, about ten times the cycles that `rtl-bench sim` printed for the workload.
@@ -66,3 +88,28 @@ image = "sim/fpu.elf"
 sources = ["src/tests/coverage64gc/fpu.S", "src/tests/coverage64gc/WALLY-init-lib.h", "src/tests/coverage64gc/WALLY-selfcheck.h", "src/examples/link/link.ld"]
 pass = { kind = "stdout", contains = "SUCCESS! All tests ran without failures." }
 max_cycles = 100000
+
+# CoreMark, 10 iterations, built as upstream benchmarks/coremark/Makefile with XLEN=64
+# ARCH=rv64gc_zba_zbb_zbc_zbs. The testbench mode +TEST=coremark ends the run at the first ecall, and
+# its cycle count is that of the timed region (start_time to stop_time).
+[[variant.sim.workload]]
+id = "coremark"
+image = "sim/coremark.elf"
+sources = [
+  "src/benchmarks/coremark/build.sh",
+  "src/benchmarks/coremark/crt.S",
+  "src/benchmarks/coremark/core_portme.c",
+  "src/benchmarks/coremark/core_portme.h",
+  "src/benchmarks/coremark/ee_printf.c",
+  "src/config/rv64gc/act/link.ld",
+  "src/config/rv64gc/act/rvmodel_macros.h",
+  "src/addins/coremark/core_list_join.c",
+  "src/addins/coremark/core_main.c",
+  "src/addins/coremark/core_matrix.c",
+  "src/addins/coremark/core_state.c",
+  "src/addins/coremark/core_util.c",
+  "src/addins/coremark/coremark.h",
+]
+pass = { kind = "stdout", contains = "Correct operation validated." }
+max_cycles = 10000000
+activity = { start = "start_time", stop = "stop_time" }
