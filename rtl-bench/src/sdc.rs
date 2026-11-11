@@ -100,7 +100,7 @@ files = "s.f"
 [[variant.clock]]
 name = "clk"
 port = "clk_i"
-period_ps = {{ tech = {period} }}
+period_ps = {{ asap7 = {period} }}
 source = "s"
 [variant.constraints]
 input_delay_fraction = {frac}
@@ -124,7 +124,7 @@ dut = "tb.dut"
 
     #[test]
     fn writes_clock_delays_and_false_paths() {
-        let s = generate("d.v", &variant(1087, 0.2), "tech").unwrap();
+        let s = generate("d.v", &variant(1087, 0.2), "asap7").unwrap();
         assert!(
             s.contains("create_clock -name clk -period 1.087 [get_ports clk_i]\n"),
             "{s}"
@@ -148,7 +148,7 @@ dut = "tb.dut"
     fn unknown_technology_lists_the_known_ones() {
         let err = generate("d.v", &variant(1000, 0.2), "other").unwrap_err();
         assert!(
-            err.contains("no period for technology `other`") && err.contains("has: tech"),
+            err.contains("no period for technology `other`") && err.contains("has: asap7"),
             "{err}"
         );
     }
@@ -157,7 +157,7 @@ dut = "tb.dut"
     fn clock_without_period_is_an_error() {
         let mut v = variant(1000, 0.2);
         v.clock[0].period_ps.clear();
-        let err = generate("d.v", &v, "tech").unwrap_err();
+        let err = generate("d.v", &v, "asap7").unwrap_err();
         assert!(
             err.contains("clock `clk` has no period") && err.contains("not set"),
             "{err}"
@@ -168,7 +168,7 @@ dut = "tb.dut"
     fn missing_delay_fractions_are_an_error() {
         let mut v = variant(1000, 0.2);
         v.constraints.input_delay_fraction = None;
-        let err = generate("d.v", &v, "tech").unwrap_err();
+        let err = generate("d.v", &v, "asap7").unwrap_err();
         assert!(
             err.contains("delay_fraction") && err.contains("not set"),
             "{err}"

@@ -82,13 +82,15 @@ support = [
 args = ["{image}"]
 
 # riscv-tests ISA tests, as upstream's tests/riscv/isa runs them on rtlsim (HTIF tohost at
-# VX_MEM_IO_EXIT_CODE). They print nothing and rtlsim reports no cycle count, so there is no max_cycles.
+# VX_MEM_IO_EXIT_CODE). They print nothing and rtlsim reports no cycle count, so there is no max_cycles; timeout_s limits the wall time instead.
 [[variant.sim.workload]]
 id = "rv32ui-p-simple"
 image = "sim/rv32ui-p-simple"
 pass = { kind = "exit_code", value = 0 }
+timeout_s = 60
 
 [[variant.sim.workload]]
 id = "rv32ui-p-add"
 image = "sim/rv32ui-p-add"
 pass = { kind = "exit_code", value = 0 }
+timeout_s = 60

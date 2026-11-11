@@ -19,6 +19,10 @@ impl Errors<'_> {
     }
 }
 
+/// The technologies that a period can name: open PDKs only. A frequency published for any other
+/// process goes in a `reference` record of the clock.
+pub const OPEN_PDKS: [&str; 5] = ["asap7", "sky130", "gf180mcu", "ihp-sg13g2", "freepdk45"];
+
 pub fn check_design(l: &Loaded) -> Vec<String> {
     let mut e = Errors {
         label: &l.label,
@@ -188,7 +192,31 @@ pub fn check_design(l: &Loaded) -> Vec<String> {
             if !c.period_ps.is_empty() && c.source.trim().is_empty() {
                 e.add(&format!("{ck}.source"), "every clock period needs a source");
             }
+            for (i, r) in c.reference.iter().enumerate() {
+                let rk = format!("{ck}.reference[{i}]");
+                if r.frequency_mhz.is_nan() || r.frequency_mhz <= 0.0 {
+                    e.add(&format!("{rk}.frequency_mhz"), "must be above 0");
+                }
+                if r.process.trim().is_empty() {
+                    e.add(
+                        &format!("{rk}.process"),
+                        "must name the process as the source does",
+                    );
+                }
+                if r.source.trim().is_empty() {
+                    e.add(&format!("{rk}.source"), "every frequency needs a source");
+                }
+            }
             for (tech, p) in &c.period_ps {
+                if !OPEN_PDKS.contains(&tech.as_str()) {
+                    e.add(
+                        &format!("{ck}.period_ps.{tech}"),
+                        format!(
+                            "`{tech}` is not an open PDK; the keys are {}",
+                            OPEN_PDKS.join(", ")
+                        ),
+                    );
+                }
                 if *p == 0 {
                     e.add(
                         &format!("{ck}.period_ps.{tech}"),
@@ -330,6 +358,14 @@ pub fn check_design(l: &Loaded) -> Vec<String> {
             exists(&mut e, dir, &format!("{wk}.image"), &w.image, &mut listed);
             for (i, s) in w.sources.iter().enumerate() {
                 exists(&mut e, dir, &format!("{wk}.sources[{i}]"), s, &mut listed);
+            }
+            match w.timeout_s {
+                None if w.max_cycles.is_none() => e.add(
+                    &format!("{wk}.timeout_s"),
+                    "needed when there is no max_cycles",
+                ),
+                Some(0) => e.add(&format!("{wk}.timeout_s"), "must be above 0"),
+                _ => {}
             }
             if w.max_cycles == Some(0) {
                 e.add(&format!("{wk}.max_cycles"), "must be above 0");
@@ -597,7 +633,7 @@ include_dirs = ["src/inc"]
 [[variant.clock]]
 name = "clk"
 port = "clk"
-period_ps = { tech = 1000 }
+period_ps = { asap7 = 1000 }
 source = "demo"
 
 [variant.constraints]
@@ -617,6 +653,7 @@ id = "w"
 image = "sim/w.bin"
 pass = { kind = "exit_code", value = 0 }
 max_cycles = 100
+timeout_s = 60
 "#;
 
     /// A design directory that passes every check, as a base for the tests.
@@ -826,7 +863,7 @@ max_cycles = 100
     #[test]
     fn clock_without_period_needs_no_source() {
         let t = good();
-        edit(&t, "period_ps = { tech = 1000 }\nsource = \"demo\"\n", "");
+        edit(&t, "period_ps = { asap7 = 1000 }\nsource = \"demo\"\n", "");
         edit(
             &t,
             "input_delay_fraction = 0.2\noutput_delay_fraction = 0.2\nsource = \"demo\"\n",
@@ -838,7 +875,7 @@ max_cycles = 100
     #[test]
     fn zero_period_and_bad_fraction_are_errors() {
         let t = good();
-        edit(&t, "tech = 1000", "tech = 0");
+        edit(&t, "asap7 = 1000", "asap7 = 0");
         edit(
             &t,
             "input_delay_fraction = 0.2",
@@ -847,7 +884,7 @@ max_cycles = 100
         let errs = run(&t);
         assert!(
             errs.iter()
-                .any(|m| m.contains("clock[0].period_ps.tech") && m.contains("above 0")),
+                .any(|m| m.contains("clock[0].period_ps.asap7") && m.contains("above 0")),
             "{errs:?}"
         );
         assert!(
@@ -911,10 +948,52 @@ max_cycles = 100
     }
 
     #[test]
-    fn max_cycles_is_optional() {
+    fn timeout_is_needed_without_max_cycles() {
         let t = good();
-        edit(&t, "max_cycles = 100\n", "");
+        edit(&t, "max_cycles = 100\ntimeout_s = 60\n", "");
+        let errs = run(&t);
+        assert!(
+            errs.iter()
+                .any(|m| m.contains("workload[0].timeout_s") && m.contains("no max_cycles")),
+            "{errs:?}"
+        );
+        edit(&t, "pass = {", "timeout_s = 0\npass = {");
+        assert!(run(&t)
+            .iter()
+            .any(|m| m.contains("timeout_s") && m.contains("above 0")));
+        edit(&t, "timeout_s = 0", "timeout_s = 60");
         assert_eq!(run(&t), Vec::<String>::new());
+    }
+
+    #[test]
+    fn period_keys_are_open_pdks() {
+        let t = good();
+        edit(&t, "asap7 = 1000", "tsmc28 = 1000");
+        let errs = run(&t);
+        assert!(
+            errs.iter().any(|m| m.contains("period_ps.tsmc28")
+                && m.contains("not an open PDK")
+                && m.contains("asap7, sky130, gf180mcu, ihp-sg13g2, freepdk45")),
+            "{errs:?}"
+        );
+    }
+
+    #[test]
+    fn reference_frequency_needs_process_and_source() {
+        let t = good();
+        edit(
+            &t,
+            "source = \"demo\"\n\n[variant.constraints]",
+            "source = \"demo\"\n\n[[variant.clock.reference]]\nfrequency_mhz = 0\nprocess = \" \"\nsource = \"\"\n\n[variant.constraints]",
+        );
+        let errs = run(&t);
+        for key in ["frequency_mhz", "process", "source"] {
+            assert!(
+                errs.iter()
+                    .any(|m| m.contains(&format!("clock[0].reference[0].{key}"))),
+                "{key}: {errs:?}"
+            );
+        }
     }
 
     #[test]

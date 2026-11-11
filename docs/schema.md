@@ -39,8 +39,13 @@ macros = [{ module = "bsg_mem_1rw_sync_mask_write_bit*", model = "src/basejump_s
 [[variant.clock]]
 name = "core_clk"
 port = "clk_i"
-period_ps = { asap7 = 1000, sky130 = 10000 }   # optional: left out until the technology policy decides it
-source = "docs/constraints.md, scaling rule 1, from the 1 GHz figure of the upstream paper"
+period_ps = { asap7 = 1000, sky130 = 10000 }   # optional; keys: asap7, sky130, gf180mcu, ihp-sg13g2, freepdk45 (docs/constraints.md)
+source = "docs/constraints.md, rule 2: the 1 GHz figure of the upstream paper for these PDKs, page 3"
+
+[[variant.clock.reference]]               # optional: a frequency published for any process
+frequency_mhz = 920
+process = "as the source writes it"
+source = "where it is published"
 
 [variant.constraints]
 input_delay_fraction = 0.2               # optional, like period_ps; of the period of the first clock, which launches the inputs
@@ -77,6 +82,7 @@ image = "sim/coremark.riscv"             # prebuilt, with the recipe in recipe/
 sources = ["src/coremark/core_main.c"]   # upstream files that the image is built from (optional)
 pass = { kind = "exit_code", value = 0 } # see below
 max_cycles = 20000000                    # optional: a limit for the cycle count; without it the count is not read
+timeout_s = 600                          # wall-clock limit of a run; needed when there is no max_cycles
 activity = { start = "roi_begin", stop = "roi_end" }   # markers for switching activity, optional
 ```
 
@@ -91,12 +97,13 @@ activity = { start = "roi_begin", stop = "roi_end" }   # markers for switching a
 
 With `cycles_pattern`, `rtl-bench sim` also reads the cycle count from the output (or from `cycles_file`) and fails above `max_cycles`.
 
-`period_ps` and the two delay fractions are optional until the technology policy is decided. `rtl-bench sdc` fails with a message that names the clock or the missing key when one is not set; a variant without periods needs no `source` for them.
+`period_ps` and the two delay fractions are optional. `rtl-bench sdc` fails with a message that names the clock or the missing key when one is not set; a variant without periods needs no `source` for them.
 
 ## Rules checked by `rtl-bench check`
 
 - Every listed file exists; every path is relative to the design directory and stays inside it.
 - Every file under `src/` is listed by some view or by `recipe/unused.txt` (`<path> <reason>` per line). A view lists a file by its file lists, `macros`, `support`, `sdc`, workload `image` and `sources`, licence files, or by being directly in one of its `include_dirs`.
 - `licence` matches the licence files: an `SPDX-License-Identifier:` line in a licence file decides; without one, the text of Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause and ISC is recognised. A vendored design without a licence file is an error. For an expression with `AND`, `OR` or `WITH`, every part must be stated by some licence file (`A WITH B`: by a line with exactly that expression, or by the texts of A and B); a source file that carries the notice can serve as the licence file of `MIT`. The `licence` of `[source]` covers everything vendored: every part of every dependency licence must be a part of it, and the licence files of the dependencies count as its licence files.
+- `period_ps` has only the keys of open PDKs; a `reference` record has a frequency above 0, a process and a source; a workload has `max_cycles` or `timeout_s`.
 - Every clock that has a period has a `source`, and a variant that sets a delay fraction has a `constraints.source`.
 - A `reference` design has no files under `src/`.

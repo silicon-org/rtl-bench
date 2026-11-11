@@ -259,15 +259,35 @@ pub fn run_workload(root: &Path, full_id: &str, workload: &str) -> Result<Outcom
     cmd.stdout(log.try_clone().map_err(|e| e.to_string())?)
         .stderr(log);
     let t = Instant::now();
-    let status = cmd
-        .status()
+    let mut child = cmd
+        .spawn()
         .map_err(|e| format!("cannot run {}: {e}", exe.display()))?;
+    let mut timed_out = false;
+    let status = loop {
+        if let Some(st) = child.try_wait().map_err(|e| e.to_string())? {
+            break st;
+        }
+        if w.timeout_s.is_some_and(|s| t.elapsed().as_secs() >= s) {
+            // our own child, not a pattern match
+            let _ = child.kill();
+            timed_out = true;
+            break child.wait().map_err(|e| e.to_string())?;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
     let seconds = t.elapsed().as_secs_f64();
     let output =
         String::from_utf8_lossy(&fs::read(&log_path).map_err(|e| e.to_string())?).into_owned();
     print!("{output}");
 
-    let mut result = check_pass(&w.pass, status.code(), &output);
+    let mut result = if timed_out {
+        Err(format!(
+            "timeout: no result after {} s (timeout_s)",
+            w.timeout_s.unwrap_or(0)
+        ))
+    } else {
+        check_pass(&w.pass, status.code(), &output)
+    };
     let mut summary = format!("{full_id} {}: run time {seconds:.2} s", w.id);
     if let (Ok(()), Some(p), Some(max)) = (&result, &v.sim.cycles_pattern, w.max_cycles) {
         let text = match &v.sim.cycles_file {

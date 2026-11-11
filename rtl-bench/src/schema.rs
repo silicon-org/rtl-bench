@@ -117,6 +117,18 @@ pub struct Clock {
     /// Where the periods come from; needed as soon as there is one.
     #[serde(default)]
     pub source: String,
+    /// Frequencies published for the design, on any process (commercial ones included).
+    #[serde(default)]
+    pub reference: Vec<Reference>,
+}
+
+/// A published frequency. The process is named only here, as the source writes it.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Reference {
+    pub frequency_mhz: f64,
+    pub process: String,
+    pub source: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -203,6 +215,8 @@ pub struct Workload {
     pub pass: Pass,
     /// Limit of the cycle count; without it the count is not read.
     pub max_cycles: Option<u64>,
+    /// Wall-clock limit of a run in seconds; needed when there is no `max_cycles`.
+    pub timeout_s: Option<u64>,
     pub activity: Option<Activity>,
 }
 

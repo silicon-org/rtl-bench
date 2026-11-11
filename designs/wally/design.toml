@@ -42,11 +42,16 @@ language = "sv-2017"
 files = "variants/rv64gc/synth.f"
 include_dirs = ["src/config/shared", "src/config/rv64gc"]
 
+# No period: the figure that upstream publishes is for a commercial process, so it is a reference record
+# and not a period of an open PDK.
 [[variant.clock]]
 name = "clk"
 port = "clk"
-period_ps = { tsmc28hpcplus = 1087 }
-source = "upstream README.md at the pinned commit, section Configurations: rv64gc, Clock Frequency 920 MHz (TSMC 28HPC+ TT 0.9 V 25 C, topographical synthesis, before place and route); 1e6 / 920 = 1087 ps, rounded"
+
+[[variant.clock.reference]]
+frequency_mhz = 920
+process = "TSMC 28HPC+ TT 0.9 V 25 C, Design Compiler topographical synthesis, before place and route"
+source = "upstream README.md at the pinned commit, section Configurations: rv64gc, Clock Frequency (MHz)"
 
 [variant.constraints]
 input_delay_fraction = 0.0

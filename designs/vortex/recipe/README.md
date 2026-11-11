@@ -56,13 +56,21 @@ Upstream's `rtlsim` (`sim/rtlsim/Makefile`): Verilator on `rtlsim_shim` (the mem
 | `sim/rv32ui-p-simple` | `dc1f905e25bcaef24789ebda33fa92374b3d7ab428642afccce2a3855caa29ad` |
 | `sim/rv32ui-p-add` | `749945a5c0a0701555df3b491b084efc4f94bffd8e80aa2219d8acd22efa6f99` |
 
-There is no long workload. Upstream's regression kernels (`tests/regression/*`) except `basic` build with Vortex's LLVM (`+xvortex`) and need the host runtime; `basic` needs the host runtime too. `tests/kernel/*` (hello, fibonacci with n = 9, vecadd) are a few hundred cycles. The longest programs that rtlsim runs standalone are the riscv-tests benchmarks (`tests/riscv/benchmarks`: median, qsort, rsort, towers, memcpy, multiply, dhrystone; spmv needs soft double precision that the nixpkgs libgcc does not have). `recipe/benchmarks.sh` builds them as `tests/riscv/common.mk` does (with `miscs/patches/riscv-benchmarks.patch`, `-Wl,--no-warn-mismatch` and `-mstrict-align`, because the nixpkgs libgcc is built for the double-float ABI and its GCC may emit misaligned accesses). All of them stop in an RTL assertion shortly before the program ends (at the cycle in brackets):
+There is no long workload; see Known gaps.
+
+## Known gaps
+
+### No long workload
+
+Upstream's regression kernels (`tests/regression/*`) except `basic` build with Vortex's LLVM (`+xvortex`) and need the host runtime; `basic` needs the host runtime too. `tests/kernel/*` (hello, fibonacci with n = 9, vecadd) are a few hundred cycles. The longest programs that rtlsim runs standalone are the riscv-tests benchmarks (`tests/riscv/benchmarks`: median, qsort, rsort, towers, memcpy, multiply, dhrystone; spmv needs soft double precision that the nixpkgs libgcc does not have). `recipe/benchmarks.sh` builds them as `tests/riscv/common.mk` does (with `miscs/patches/riscv-benchmarks.patch`, `-Wl,--no-warn-mismatch` and `-mstrict-align`, because the nixpkgs libgcc is built for the double-float ABI and its GCC may emit misaligned accesses). All of them stop in an RTL assertion shortly before the program ends (at the cycle in brackets):
 
 ```
 [270923] %Error: VX_allocator.sv:66: Assertion failed in TOP.rtlsim_shim.vortex.g_clusters[0].cluster.g_sockets[0].socket.g_cores[0].core.g_compute_slices.g_slices[0].compute_slice.backend_slice.execute_slice.lsu_block.mem_path.g_coalescing.mem_coalescer.req_ibuf.allocator: releasing invalid addr 1
 ```
 
-median 270923, towers 154757, memcpy 705693, multiply 1147329, dhrystone 6088877, qsort 5760099, rsort 6868351. With `--no-assert` median does not finish (three minutes of wall time with no exit). The cause is not known: either the RTL at this commit with Verilator 5.052, or the compiler difference (GCC 16 against Vortex's GCC 9.2 toolchain). The benchmarks are not part of the design.
+median 270923, towers 154757, memcpy 705693, multiply 1147329, dhrystone 6088877, qsort 5760099, rsort 6868351. With `--no-assert` median does not finish (three minutes of wall time with no exit). The cause is not known: either the RTL at this commit with Verilator 5.052, or the compiler difference (GCC 16 against Vortex's GCC 9.2 toolchain). The benchmarks are not part of the design, and no cycle-count work was done.
+
+Ruled out as the cause: misaligned accesses (the same failure with `-mstrict-align`); the build path and debug symbols (the images are stripped and built in a fixed directory); the assertion itself being wrong (without it median hangs). Not ruled out: the RTL at this commit with Verilator 5.052, the GCC 16 code generation, the `--no-warn-mismatch` link of the double-float libgcc, and the Ramulator DRAM model (not varied).
 
 ## Tools
 
