@@ -1,0 +1,94 @@
+[design]
+id = "vortex"
+name = "Vortex"
+description = "Open RISC-V GPGPU with SIMT warps, caches and a kernel management unit, in SystemVerilog."
+
+[source]
+repository = "https://github.com/vortexgpgpu/vortex"
+commit = "ca18837bd0871911af691e704d8ebdd14de5b4ec"
+mode = "vendored"
+licence = "Apache-2.0"
+licence_files = ["src/LICENSE"]
+
+[[variant]]
+id = "default"
+description = "One cluster, one core, 4 warps, 4 threads, 32 bit (RV32IMF), no L2, no extensions: the default of VX_config.toml."
+
+# Synthesis top: Vortex, the generic top of upstream's ASIC flow (hw/syn/yosys/Makefile:
+# TOP_LEVEL_ENTITY ?= Vortex, PDK asap7, with -DSYNTHESIS -DASIC -DYOSYS). Not Vortex_axi (the
+# AXI4 adapter that the FPGA platforms use) and none of the FPGA shells (hw/rtl/afu). The file list is
+# what that flow reads: every .v and .sv file directly in its include directories (the packages first),
+# see recipe/README.md. VX_config.vh and VX_types.vh are generated from VX_config.toml and
+# VX_types.toml by upstream's ci/gen_config.py, as ./configure does.
+[variant.synth]
+top = "Vortex"
+language = "sv-2017"
+files = "variants/default/synth.f"
+include_dirs = [
+  "src/generated/sw", "src/generated/hw",
+  "src/hw/rtl", "src/hw/rtl/libs", "src/hw/rtl/interfaces", "src/hw/rtl/core", "src/hw/rtl/mem",
+  "src/hw/rtl/vm", "src/hw/rtl/cache", "src/hw/rtl/fpu", "src/hw/syn/libs/no_mem",
+]
+# The macros that gen_config.py resolves for these flags (ci/gen_config.py --cflags): the floating point
+# unit is the generic one (STD) for ASIC.
+defines = { SYNTHESIS = "", ASIC = "", YOSYS = "", NDEBUG = "", VX_CFG_XLEN = "32", VX_CFG_XLEN_32 = "", VX_CFG_FPU_TYPE_STD = "", VX_CFG_TCU_TYPE_TFR = "" }
+# With ASIC, VX_sp_ram, VX_dp_ram and VX_1rw1r_ram instantiate these two RAM modules; upstream's
+# hw/syn/libs/no_mem has them as black boxes with a behavioural body, a process replaces them by
+# macros. The simulation does not define ASIC and infers the RAMs in the RTL.
+macros = [
+  { module = "VX_sp_ram_asic", model = "src/hw/syn/libs/no_mem/VX_sp_ram_asic.v" },
+  { module = "VX_dp_ram_asic", model = "src/hw/syn/libs/no_mem/VX_dp_ram_asic.v" },
+]
+
+# No period and no I/O delays yet. Vortex has one clock input.
+[[variant.clock]]
+name = "clk"
+port = "clk"
+
+[variant.constraints]
+resets = ["reset"]
+
+# Simulation: upstream's rtlsim (sim/rtlsim/Makefile) with the default configuration: the shim
+# rtlsim_shim around Vortex and the host program (main.cpp, processor.cpp, the memory and DRAM models,
+# DPI floating point). SoftFloat and Ramulator come from the nix shell (VX_SOFTFLOAT, VX_RAMULATOR).
+[variant.sim]
+simulator = "verilator"
+top = "rtlsim_shim"
+files = "variants/default/sim.f"
+include_dirs = ["src/sim/rtlsim", "src/hw/dpi"]
+undefine = ["SYNTHESIS", "ASIC", "YOSYS", "VX_CFG_FPU_TYPE_STD"]
+defines = { SIMULATION = "", SV_DPI = "", VX_CFG_FPU_TYPE_DPI = "" }
+exclude = ["src/hw/syn/libs/no_mem/VX_sp_ram_asic.v", "src/hw/syn/libs/no_mem/VX_dp_ram_asic.v"]
+# The options and C++ flags of sim/rtlsim/Makefile (--exe: the model is linked with upstream's main.cpp).
+# -Wno-error=dangling-reference: GCC 16 reports one in the fmt bundled with spdlog (Ramulator).
+verilator_flags = [
+  "--exe", "--assert", "-Wall", "-Wpedantic", "-Wno-DECLFILENAME", "-Wno-REDEFMACRO",
+  "--replication-limit", "65536", "--x-initial", "unique", "--x-assign", "unique",
+  "-CFLAGS", "-std=c++17 -Wall -Wextra -Wfatal-errors -Werror -Wno-error=dangling-reference -fPIC -fno-tree-loop-distribute-patterns -DNDEBUG -DSIMULATION -DSV_DPI -DVX_CFG_XLEN=32 -DVX_CFG_XLEN_32 -I${DESIGN_DIR}/src/generated/sw -I${DESIGN_DIR}/src/generated/hw -I${DESIGN_DIR}/src/sim/common -I${DESIGN_DIR}/src/sw/common -I${VX_SOFTFLOAT}/include -I${VX_RAMULATOR}/src -I${VX_RAMULATOR}/spdlog/include -I${VX_RAMULATOR}/yaml-cpp/include",
+  "-LDFLAGS", "${VX_SOFTFLOAT}/lib/softfloat.a -Wl,-rpath,${VX_RAMULATOR}/lib -L${VX_RAMULATOR}/lib -lramulator -Wl,--push-state,--no-as-needed -lramulator-vortex -Wl,--pop-state",
+]
+dut = "rtlsim_shim.vortex"
+support = [
+  "src/ci/gen_config.py", "src/VX_config.toml", "src/VX_types.toml",
+  "src/generated/sw/VX_config.h", "src/generated/sw/VX_types.h",
+  "src/hw/dpi/dpi_float.vh", "src/hw/dpi/dpi_util.vh",
+  "src/sim/common/cout_drainer.h", "src/sim/common/dram_bank_model.h", "src/sim/common/dram_sim.h",
+  "src/sim/common/elf_loader.h", "src/sim/common/host_monitor.h", "src/sim/common/mem.h",
+  "src/sim/rtlsim/processor.h",
+  "src/sw/common/bitmanip.h", "src/sw/common/dram_timing.h", "src/sw/common/nan_box.h",
+  "src/sw/common/rvfloats.h", "src/sw/common/softfloat_ext.h", "src/sw/common/util.h", "src/sw/common/vm_types.h",
+]
+# rtlsim takes the program as its argument and exits with the exit code of the program.
+args = ["{image}"]
+
+# riscv-tests ISA tests, as upstream's tests/riscv/isa runs them on rtlsim (HTIF tohost at
+# VX_MEM_IO_EXIT_CODE). They print nothing and rtlsim reports no cycle count, so there is no max_cycles.
+[[variant.sim.workload]]
+id = "rv32ui-p-simple"
+image = "sim/rv32ui-p-simple"
+pass = { kind = "exit_code", value = 0 }
+
+[[variant.sim.workload]]
+id = "rv32ui-p-add"
+image = "sim/rv32ui-p-add"
+pass = { kind = "exit_code", value = 0 }

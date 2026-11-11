@@ -1,0 +1,1 @@
+src/miscs/patches/riscv-benchmarks.patch the riscv-tests benchmarks built with it stop on an RTL assertion (recipe/README.md); recipe/benchmarks.sh builds them
