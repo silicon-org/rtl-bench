@@ -269,11 +269,25 @@ pub fn check_design(l: &Loaded) -> Vec<String> {
         let sim_list = read_paths(&mut e, dir, &format!("{mk}.files"), &sim.files);
         listed.extend(sim_list.iter().map(|s| norm(s)));
         listed.insert(norm(&sim.files));
+        if sim.standalone && !sim.exclude.is_empty() {
+            e.add(
+                &format!("{mk}.exclude"),
+                "a standalone simulation takes no synthesis files, so it excludes none",
+            );
+        }
         for (i, x) in sim.exclude.iter().enumerate() {
             if !synth.contains(x) {
                 e.add(
                     &format!("{mk}.exclude[{i}]"),
                     format!("`{x}` is not a synthesis file"),
+                );
+            }
+        }
+        for (wi, w) in sim.workload.iter().enumerate() {
+            if matches!(w.pass, Pass::Uart { .. }) && sim.uart_file.is_none() {
+                e.add(
+                    &format!("{mk}.workload[{wi}].pass"),
+                    "a uart pass check needs sim.uart_file",
                 );
             }
         }
@@ -287,8 +301,17 @@ pub fn check_design(l: &Loaded) -> Vec<String> {
         }
         for (i, d) in sim.include_dirs.iter().enumerate() {
             let k = format!("{mk}.include_dirs[{i}]");
-            if path_ok(&mut e, &k, d) && !dir.join(d).is_dir() {
+            if !path_ok(&mut e, &k, d) {
+                continue;
+            }
+            if !dir.join(d).is_dir() {
                 e.add(&k, format!("`{d}` is not a directory"));
+            } else {
+                for p in &src_files {
+                    if Path::new(p).parent() == Some(Path::new(&norm(d))) {
+                        listed.insert(p.clone());
+                    }
+                }
             }
         }
         for (i, s) in sim.support.iter().enumerate() {
@@ -307,11 +330,7 @@ pub fn check_design(l: &Loaded) -> Vec<String> {
             }
         }
         for (i, a) in sim.prepare.iter().flatten().enumerate() {
-            if a.replace("{workload}", "")
-                .replace("{image}", "")
-                .replace("{dir}", "")
-                .contains('{')
-            {
+            if placeholders_left(a) {
                 e.add(
                     &format!("{mk}.prepare[{i}]"),
                     "only {workload}, {image} and {dir} can be used",
@@ -319,11 +338,7 @@ pub fn check_design(l: &Loaded) -> Vec<String> {
             }
         }
         for (i, a) in sim.args.iter().enumerate() {
-            let rest = a
-                .replace("{workload}", "")
-                .replace("{image}", "")
-                .replace("{dir}", "");
-            if rest.contains('{') {
+            if placeholders_left(a) {
                 e.add(
                     &format!("{mk}.args[{i}]"),
                     "only {workload}, {image} and {dir} can be used",
@@ -366,6 +381,14 @@ pub fn check_design(l: &Loaded) -> Vec<String> {
                 ),
                 Some(0) => e.add(&format!("{wk}.timeout_s"), "must be above 0"),
                 _ => {}
+            }
+            for (i, a) in w.args.iter().enumerate() {
+                if placeholders_left(a) {
+                    e.add(
+                        &format!("{wk}.args[{i}]"),
+                        "only {workload}, {image} and {dir} can be used",
+                    );
+                }
             }
             if w.max_cycles == Some(0) {
                 e.add(&format!("{wk}.max_cycles"), "must be above 0");
@@ -425,6 +448,21 @@ fn check_source(e: &mut Errors, _dir: &Path, key: &str, commit: &str, repo: &str
             format!("`{repo}` is not an https URL"),
         );
     }
+}
+
+/// Does the text have a `{...}` that is not {workload}, {image}, {dir} or a ${NAME}?
+fn placeholders_left(a: &str) -> bool {
+    let mut s = a.to_string();
+    while let Some(i) = s.find("${") {
+        match s[i..].find('}') {
+            Some(j) => s.replace_range(i..i + j + 1, ""),
+            None => return true,
+        }
+    }
+    s.replace("{workload}", "")
+        .replace("{image}", "")
+        .replace("{dir}", "")
+        .contains('{')
 }
 
 fn is_id(s: &str) -> bool {
@@ -994,6 +1032,51 @@ timeout_s = 60
                 "{key}: {errs:?}"
             );
         }
+    }
+
+    #[test]
+    fn uart_pass_needs_a_uart_file() {
+        let t = good();
+        edit(
+            &t,
+            "pass = { kind = \"exit_code\", value = 0 }",
+            "pass = { kind = \"uart\", contains = \"PASS!\" }",
+        );
+        let errs = run(&t);
+        assert!(
+            errs.iter()
+                .any(|m| m.contains("workload[0].pass") && m.contains("uart_file")),
+            "{errs:?}"
+        );
+        edit(
+            &t,
+            "dut = \"tb.dut\"",
+            "dut = \"tb.dut\"\nuart_file = \"uart0.log\"",
+        );
+        assert_eq!(run(&t), Vec::<String>::new());
+    }
+
+    #[test]
+    fn env_references_are_allowed_in_args() {
+        assert!(!placeholders_left("--a=${DESIGN_DIR}/x {image}"));
+        assert!(placeholders_left("{nope}"));
+        assert!(placeholders_left("${open"));
+    }
+
+    #[test]
+    fn standalone_simulation_excludes_nothing() {
+        let t = good();
+        edit(
+            &t,
+            "dut = \"tb.dut\"",
+            "dut = \"tb.dut\"\nstandalone = true\nexclude = [\"src/top.sv\"]",
+        );
+        let errs = run(&t);
+        assert!(
+            errs.iter()
+                .any(|m| m.contains("sim.exclude") && m.contains("standalone")),
+            "{errs:?}"
+        );
     }
 
     #[test]

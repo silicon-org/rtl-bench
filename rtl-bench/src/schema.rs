@@ -97,6 +97,10 @@ pub struct Synth {
     pub parameters: BTreeMap<String, String>,
     #[serde(default)]
     pub macros: Vec<MemoryMacro>,
+    /// All files are one compilation unit, so that a header-like file listed before the files
+    /// that use its macros applies to them (slang `--single-unit`).
+    #[serde(default)]
+    pub single_unit: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -175,6 +179,9 @@ pub struct Sim {
     /// Include directories of the simulation, after those of the synthesis view.
     #[serde(default)]
     pub include_dirs: Vec<String>,
+    /// The simulation lists all its files itself and takes none from the synthesis view.
+    #[serde(default)]
+    pub standalone: bool,
     /// Synthesis files that the simulation leaves out.
     #[serde(default)]
     pub exclude: Vec<String>,
@@ -198,6 +205,8 @@ pub struct Sim {
     pub args: Vec<String>,
     /// Regular expression, one capture group: the cycle count in the output.
     pub cycles_pattern: Option<String>,
+    /// File of the run directory with the UART text that `uart` pass checks read.
+    pub uart_file: Option<String>,
     /// File of the run directory that `cycles_pattern` reads instead of the output.
     pub cycles_file: Option<String>,
     #[serde(default)]
@@ -215,6 +224,9 @@ pub struct Workload {
     pub pass: Pass,
     /// Limit of the cycle count; without it the count is not read.
     pub max_cycles: Option<u64>,
+    /// Further arguments of the run, after those of the variant.
+    #[serde(default)]
+    pub args: Vec<String>,
     /// Wall-clock limit of a run in seconds; needed when there is no `max_cycles`.
     pub timeout_s: Option<u64>,
     pub activity: Option<Activity>,

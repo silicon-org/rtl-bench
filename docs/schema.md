@@ -32,6 +32,7 @@ language = "sv-2017"                     # sv-2017 | verilog-2005
 files = "variants/unicore/synth.f"       # one path per line (blank lines and # comments allowed), in compilation order
 include_dirs = ["src/bp_common/src/include"]
 defines = { BP_CFG = "e_bp_unicore_cfg" }
+single_unit = false                      # true: one compilation unit for slang, so listed include files apply to the files after them
 parameters = { }                         # top-level parameter overrides
 # Memories kept as macros: the module name pattern and the behavioural model that simulation uses.
 macros = [{ module = "bsg_mem_1rw_sync_mask_write_bit*", model = "src/basejump_stl/bsg_mem/bsg_mem_1rw_sync_mask_write_bit.sv" }]
@@ -62,6 +63,7 @@ files = "variants/unicore/sim.f"         # testbench files; the synthesis files 
 verilator_flags = []                     # Verilator options of this variant (a .vlt file goes here, before the sources), with the reason in a comment;
                                          # ${NAME} is replaced by an environment variable and ${DESIGN_DIR} by the absolute design directory;
                                          # --exe: the design has its own C++ main (built with --cc --build instead of --binary)
+standalone = false                       # true: the simulation lists all its files in `files` and takes none from the synthesis view
 include_dirs = []                        # include directories of the simulation, after those of the synthesis view
 undefine = []                            # names of synthesis defines that the simulation does not inherit
 exclude = []                             # synthesis files that the simulation leaves out (a generated synthesis wrapper)
@@ -74,6 +76,7 @@ env_dirs = { }                           # variable = directory of the design, s
 prepare = []                             # commands run in the run directory first, as word lists; for image conversion
 args = ["+TEST={workload}", "+ElfFile={image}"]   # arguments of the run; in args and prepare, {workload}, {image} (the copy of the image in the run directory) and {dir} (the run directory) are replaced
 cycles_pattern = "Cycles: ([0-9]+)"      # optional regular expression with one group: the cycles in the output
+uart_file = "uart0.log"                  # file of the run directory with the UART text, for `uart` pass checks
 cycles_file = "perf.trace"               # optional: a file of the run directory that cycles_pattern reads instead of the output
 
 [[variant.sim.workload]]
@@ -82,6 +85,7 @@ image = "sim/coremark.riscv"             # prebuilt, with the recipe in recipe/
 sources = ["src/coremark/core_main.c"]   # upstream files that the image is built from (optional)
 pass = { kind = "exit_code", value = 0 } # see below
 max_cycles = 20000000                    # optional: a limit for the cycle count; without it the count is not read
+args = []                                # further arguments of this run, after those of the variant
 timeout_s = 600                          # wall-clock limit of a run; needed when there is no max_cycles
 activity = { start = "roi_begin", stop = "roi_end" }   # markers for switching activity, optional
 ```
@@ -92,7 +96,7 @@ activity = { start = "roi_begin", stop = "roi_end" }   # markers for switching a
 |---|---|---|
 | `exit_code` | `value` | the simulator exits with `value` |
 | `stdout` | `contains` | the simulator exits with 0 and its output contains `contains` |
-| `uart` | `contains` | the UART output contains `contains` (parsed; `rtl-bench sim` does not run it yet) |
+| `uart` | `contains` | the simulator exits with 0 and the file `sim.uart_file` of the run directory contains `contains` |
 | `signature` | `reference` | the signature equals the reference file (parsed; `rtl-bench sim` does not run it yet) |
 
 With `cycles_pattern`, `rtl-bench sim` also reads the cycle count from the output (or from `cycles_file`) and fails above `max_cycles`.

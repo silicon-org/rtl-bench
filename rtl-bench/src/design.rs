@@ -98,6 +98,9 @@ pub fn read_list(dir: &Path, rel: &str) -> Result<Vec<String>, String> {
 /// The compilation list of a variant's simulation: synthesis files without the
 /// excluded ones, then the simulation files.
 pub fn sim_files(dir: &Path, v: &Variant) -> Result<Vec<String>, String> {
+    if v.sim.standalone {
+        return read_list(dir, &v.sim.files);
+    }
     let mut files: Vec<String> = read_list(dir, &v.synth.files)?
         .into_iter()
         .filter(|f| !v.sim.exclude.contains(f))

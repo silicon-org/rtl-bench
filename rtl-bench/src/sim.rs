@@ -159,7 +159,12 @@ pub struct Outcome {
 }
 
 /// Does the output of a run meet the pass check?
-pub fn check_pass(pass: &Pass, exit_code: Option<i32>, output: &str) -> Result<(), String> {
+pub fn check_pass(
+    pass: &Pass,
+    exit_code: Option<i32>,
+    output: &str,
+    uart: &str,
+) -> Result<(), String> {
     match pass {
         Pass::ExitCode { value } => match exit_code {
             Some(c) if c == *value => Ok(()),
@@ -174,9 +179,16 @@ pub fn check_pass(pass: &Pass, exit_code: Option<i32>, output: &str) -> Result<(
                 Err(format!("the output does not contain `{contains}`"))
             }
         }
-        Pass::Uart { .. } | Pass::Signature { .. } => {
-            Err("this kind of pass check is not implemented yet".into())
+        Pass::Uart { contains } => {
+            if exit_code != Some(0) {
+                Err(format!("exit code {exit_code:?}, expected 0"))
+            } else if uart.contains(contains.as_str()) {
+                Ok(())
+            } else {
+                Err(format!("the UART output does not contain `{contains}`"))
+            }
         }
+        Pass::Signature { .. } => Err("this kind of pass check is not implemented yet".into()),
     }
 }
 
@@ -205,7 +217,7 @@ pub fn run_workload(root: &Path, full_id: &str, workload: &str) -> Result<Outcom
                 ids.join(", ")
             )
         })?;
-    if matches!(w.pass, Pass::Uart { .. } | Pass::Signature { .. }) {
+    if matches!(w.pass, Pass::Signature { .. }) {
         return Err("this kind of pass check is not implemented yet".into());
     }
     let exe = build(root, &l, v, full_id)?;
@@ -221,13 +233,16 @@ pub fn run_workload(root: &Path, full_id: &str, workload: &str) -> Result<Outcom
 
     let mut cmd = Command::new(&exe);
     cmd.current_dir(&run_dir);
-    let subst = |a: &str| {
-        a.replace("{workload}", &w.id)
-            .replace("{image}", &image.to_string_lossy())
-            .replace("{dir}", &run_dir.to_string_lossy())
+    let subst = |a: &str| -> Result<String, String> {
+        expand_env(
+            &a.replace("{workload}", &w.id)
+                .replace("{image}", &image.to_string_lossy())
+                .replace("{dir}", &run_dir.to_string_lossy()),
+            &l.dir,
+        )
     };
     for step in &v.sim.prepare {
-        let words: Vec<String> = step.iter().map(|a| subst(a)).collect();
+        let words: Vec<String> = step.iter().map(|a| subst(a)).collect::<Result<_, _>>()?;
         let (prog, rest) = words.split_first().ok_or("prepare: an empty command")?;
         let status = Command::new(prog)
             .args(rest)
@@ -238,8 +253,8 @@ pub fn run_workload(root: &Path, full_id: &str, workload: &str) -> Result<Outcom
             return Err(format!("prepare: `{}` failed ({status})", words.join(" ")));
         }
     }
-    for a in &v.sim.args {
-        cmd.arg(subst(a));
+    for a in v.sim.args.iter().chain(&w.args) {
+        cmd.arg(subst(a)?);
     }
     for (k, d) in &v.sim.env_dirs {
         cmd.env(k, l.dir.join(d));
@@ -286,7 +301,11 @@ pub fn run_workload(root: &Path, full_id: &str, workload: &str) -> Result<Outcom
             w.timeout_s.unwrap_or(0)
         ))
     } else {
-        check_pass(&w.pass, status.code(), &output)
+        let uart = match &v.sim.uart_file {
+            Some(f) => fs::read_to_string(run_dir.join(f)).unwrap_or_default(),
+            None => String::new(),
+        };
+        check_pass(&w.pass, status.code(), &output, &uart)
     };
     let mut summary = format!("{full_id} {}: run time {seconds:.2} s", w.id);
     if let (Ok(()), Some(p), Some(max)) = (&result, &v.sim.cycles_pattern, w.max_cycles) {
@@ -321,6 +340,9 @@ pub fn elaborate(root: &Path, full_id: &str) -> Result<bool, String> {
     let files = read_list(&l.dir, &v.synth.files)?;
     let mut cmd = Command::new("slang");
     cmd.current_dir(&l.dir).args(["--top", &v.synth.top]);
+    if v.synth.single_unit {
+        cmd.arg("--single-unit");
+    }
     if v.synth.language == crate::schema::Language::Sv2017 {
         cmd.args(["--std", "1800-2017"]);
     }
@@ -373,8 +395,8 @@ mod tests {
     #[test]
     fn exit_code_check() {
         let p = Pass::ExitCode { value: 0 };
-        assert!(check_pass(&p, Some(0), "").is_ok());
-        let err = check_pass(&p, Some(3), "").unwrap_err();
+        assert!(check_pass(&p, Some(0), "", "").is_ok());
+        let err = check_pass(&p, Some(3), "", "").unwrap_err();
         assert!(
             err.contains("Some(3)") && err.contains("expected 0"),
             "{err}"
@@ -386,19 +408,33 @@ mod tests {
         let p = Pass::Stdout {
             contains: "SUCCESS".into(),
         };
-        assert!(check_pass(&p, Some(0), "x\nSUCCESS! done\n").is_ok());
-        let err = check_pass(&p, Some(0), "FAIL: 1 test").unwrap_err();
+        assert!(check_pass(&p, Some(0), "x\nSUCCESS! done\n", "").is_ok());
+        let err = check_pass(&p, Some(0), "FAIL: 1 test", "").unwrap_err();
         assert!(err.contains("does not contain `SUCCESS`"), "{err}");
-        assert!(check_pass(&p, Some(1), "SUCCESS").is_err());
-        assert!(check_pass(&p, None, "SUCCESS").is_err());
+        assert!(check_pass(&p, Some(1), "SUCCESS", "").is_err());
+        assert!(check_pass(&p, None, "SUCCESS", "").is_err());
     }
 
     #[test]
-    fn unimplemented_kinds_fail() {
+    fn uart_check_reads_the_uart_text() {
         let p = Pass::Uart {
-            contains: "x".into(),
+            contains: "PASS!".into(),
         };
-        assert!(check_pass(&p, Some(0), "x")
+        assert!(check_pass(&p, Some(0), "", "log\nPASS!\n").is_ok());
+        let err = check_pass(&p, Some(0), "PASS!", "FAIL!").unwrap_err();
+        assert!(
+            err.contains("UART output does not contain `PASS!`"),
+            "{err}"
+        );
+        assert!(check_pass(&p, Some(1), "", "PASS!").is_err());
+    }
+
+    #[test]
+    fn signature_kind_is_not_implemented() {
+        let p = Pass::Signature {
+            reference: "r".into(),
+        };
+        assert!(check_pass(&p, Some(0), "", "")
             .unwrap_err()
             .contains("not implemented"));
     }
