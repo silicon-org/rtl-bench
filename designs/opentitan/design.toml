@@ -128,7 +128,10 @@ include_dirs = [
   "src/hw/ip/rv_core_ibex/rtl",
 ]
 undefine = ["SYNTHESIS"]
-defines = { AST_BYPASS_CLK = "1", PRIM_DEFAULT_IMPL = "prim_pkg::ImplGeneric", RVFI = "1", VERILATOR_MEM_BASE = "268435456", VERILATOR_TEST_STATUS_ADDR = "1092550784", DMIDirectTAP = "1", RV_CORE_IBEX_SIM_SRAM = "1", DISABLE_PRIM_CDC_RAND_DELAY = "" }
+# RVFI is not defined: upstream defines it (RVFI=true in the sim target of chip_sim.core) so that the
+# Ibex tracer writes trace_core_00000000.log, which grows without bound (about 190 MB per 10 M cycles).
+# The RTL has it behind ifdef RVFI (rv_core_ibex.sv), so leaving the define out turns the tracer off.
+defines = { AST_BYPASS_CLK = "1", PRIM_DEFAULT_IMPL = "prim_pkg::ImplGeneric", VERILATOR_MEM_BASE = "268435456", VERILATOR_TEST_STATUS_ADDR = "1092550784", DMIDirectTAP = "1", RV_CORE_IBEX_SIM_SRAM = "1", DISABLE_PRIM_CDC_RAND_DELAY = "" }
 # The options of the sim target (hw/top_earlgrey/dv/verilator/chip_sim.core, edalize's config.mk,
 # recorded in variants/earlgrey/sim-edalize-config.mk.txt) without tracing (--trace, which upstream
 # keeps on, costs build time and is not used), --no-timing (the power-good models of the AST have

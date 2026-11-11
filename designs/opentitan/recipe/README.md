@@ -13,7 +13,7 @@ Upstream: https://github.com/lowRISC/opentitan, commit `96c62c527b18ff7b20880638
 | `hw/vendor/lowrisc_ibex` | lowRISC/ibex `38c070939183cc10940b66c8e9e04eeca6b65470` | Apache-2.0 (`LICENSE`, `NOTICE`, `CREDITS.md`) |
 | `hw/vendor/pulp_riscv_dbg` | pulp-platform/riscv-dbg `358f90110220adf7a083f8b65d157e836d706236` | Solderpad Hardware License 0.51 (ETH Zurich and University of Bologna; the header of its files, `LICENSE`; the full text is `licences/SHL-0.51.txt`, fetched by `recipe/fetch-licences.sh` from solderpad.org); `debug_rom` from SiFive: Apache-2.0 (`LICENSE.SiFive`) |
 
-Files of OpenTitan that carry other copyright lines: six files of `hw/ip/usbdev/rtl` (`usb_fs_*.sv`, "Copyright Luke Valenty (TinyFPGA project)") and `hw/ip/prim/dv/prim_prince/crypto_dpi_prince/prince_ref.h` ("Copyright 2016 Sebastien Riou"); both have the OpenTitan Apache-2.0 SPDX line. `hw/dv/dpi/usbdpi/usb_crc.c` (a C routine of the simulation, "Ported by Ron Hemphill" from a USB white paper) has no licence statement at all; it is in the simulation list only.
+Files of OpenTitan that carry other copyright lines: six files of `hw/ip/usbdev/rtl` (`usb_fs_*.sv`, "Copyright Luke Valenty (TinyFPGA project)") and `hw/ip/prim/dv/prim_prince/crypto_dpi_prince/prince_ref.h` ("Copyright 2016 Sebastien Riou"); both have the OpenTitan Apache-2.0 SPDX line. `hw/dv/dpi/usbdpi/usb_crc.c` (a C routine of the simulation, "Ported by Ron Hemphill" from a USB white paper) has no licence statement at all; it is in the simulation list only. It is kept: the Apache-2.0 `LICENSE` of the repository covers it.
 
 ## File lists
 
@@ -44,7 +44,7 @@ Upstream ships an SDC for the chip: `hw/top_earlgrey/syn/chip_earlgrey_asic.sdc`
 
 Upstream's Verilator chip target: `chip_sim_tb` around `chip_earlgrey_verilator`, with the DPI models of UART, GPIO, SPI, USB, JTAG and DMI and the memory loader (`hw/dv/verilator`). The options are those of the sim target (`sim-edalize-config.mk.txt`), with differences: no `--trace` (upstream's choice to trace costs build time, the run does not need it), and `--no-timing` (the AST models have delays, which Verilator 5.052 refuses without `--timing` or `--no-timing`). The model runs with 4 threads, as upstream sets it. Build, measured on the NAS with `-j 16` at a load of about 20: 78 s wall (Verilator 77 s, of which 42 s conversion and 24 s C++ build), 389 s CPU, 2.3 GB resident at most; 189 MB of generated C++ in 167 files.
 
-The RVFI tracer is on (as in upstream's sim target) and writes `trace_core_00000000.log` in the run directory, a few MB per 200k cycles. The UART text goes to `uart0.log`, which the pass checks read; the simulation prints its cycle count at the end.
+The sim target of upstream defines `RVFI` (`RVFI=true` in `chip_sim.core`), which makes the Ibex tracer write `trace_core_00000000.log`, a few MB per 200k cycles and without bound (about 190 MB per 10 M cycles). The RTL has the tracer behind `ifdef RVFI` (`rv_core_ibex.sv`), so the variant leaves the define out and no trace file is written. The UART text goes to `uart0.log`, which the pass checks read; the simulation prints its cycle count at the end.
 
 ### Boot ROM and OTP image
 
