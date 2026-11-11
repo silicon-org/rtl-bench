@@ -16,6 +16,7 @@ The release is a tarball. Tools pin it by hash.
 | Design | Variant | Upstream | Licence | Source |
 |---|---|---|---|---|
 | BlackParrot | unicore | [black-parrot/black-parrot](https://github.com/black-parrot/black-parrot) at `909619a68f35` | BSD-3-Clause AND SHL-0.51 | vendored |
+| OpenTitan Earl Grey | earlgrey | [lowRISC/opentitan](https://github.com/lowRISC/opentitan) at `96c62c527b18` | Apache-2.0 AND SHL-0.51 | vendored |
 | Vortex | default | [vortexgpgpu/vortex](https://github.com/vortexgpgpu/vortex) at `ca18837bd087` | Apache-2.0 | vendored |
 | CORE-V Wally | rv64gc | [openhwfoundation/cvw](https://github.com/openhwfoundation/cvw) at `90259bdca99c` | (Apache-2.0 WITH SHL-2.1) AND MIT AND Apache-2.0 | vendored |
 <!-- designs:end -->

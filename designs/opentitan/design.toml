@@ -1,0 +1,202 @@
+[design]
+id = "opentitan"
+name = "OpenTitan Earl Grey"
+description = "Open-source silicon root of trust: the Earl Grey chip with an Ibex core, crypto accelerators and security peripherals."
+
+[source]
+repository = "https://github.com/lowRISC/opentitan"
+commit = "96c62c527b18ff7b2088063866f4f48b63b66fb0"
+mode = "vendored"
+licence = "Apache-2.0 AND SHL-0.51"
+licence_files = ["src/LICENSE", "src/NOTICE", "licences/SHL-0.51.txt"]
+
+# The third-party RTL that OpenTitan keeps under hw/vendor, as OpenTitan's vendor tool imports it
+# (with the patches of hw/vendor/patches). The revisions are those of the lock files.
+[[source.dependency]]
+repository = "https://github.com/lowRISC/ibex"
+commit = "38c070939183cc10940b66c8e9e04eeca6b65470"
+licence = "Apache-2.0"
+licence_files = ["src/hw/vendor/lowrisc_ibex/LICENSE", "src/hw/vendor/lowrisc_ibex/NOTICE", "src/hw/vendor/lowrisc_ibex/CREDITS.md"]
+
+# pulp_riscv_dbg: the files carry the Solderpad Hardware License 0.51 (ETH Zurich and University of
+# Bologna); debug_rom comes from SiFive (LICENSE.SiFive, Apache-2.0).
+[[source.dependency]]
+repository = "https://github.com/pulp-platform/riscv-dbg"
+commit = "358f90110220adf7a083f8b65d157e836d706236"
+licence = "Apache-2.0 AND SHL-0.51"
+licence_files = ["src/hw/vendor/pulp_riscv_dbg/LICENSE", "src/hw/vendor/pulp_riscv_dbg/LICENSE.SiFive", "licences/SHL-0.51.txt"]
+
+[[variant]]
+id = "earlgrey"
+description = "The full Earl Grey chip with the generic primitives and the behavioural AST."
+
+# Synthesis top: chip_earlgrey_asic, the chip that upstream's ASIC synthesis flow takes
+# (hw/top_earlgrey/syn/chip_earlgrey_asic_syn_cfg.hjson: name chip_earlgrey_asic, with the pad ring
+# and the AST; the module top_earlgrey inside it is expanded). The other flow, top_earlgrey_gtech_*,
+# synthesises top_earlgrey alone, without pads and AST, as a technology-independent check. The file
+# list is what FuseSoC resolves for lowrisc:systems:chip_earlgrey_asic:0.1 (target syn, flag
+# fileset_top) in the cores root of recipe/README.md: 652 files, 22 of them the abstract primitives
+# that primgen generates (src/generated).
+[variant.synth]
+top = "chip_earlgrey_asic"
+language = "sv-2017"
+single_unit = true   # prim_assert.sv and the other include files are listed, and the macros apply to what follows
+files = "variants/earlgrey/synth.f"
+include_dirs = [
+  "src/hw/ip/prim/dv/prim_prince/crypto_dpi_prince",
+  "src/hw/dv/sv/dv_utils",
+  "src/hw/ip/prim/dv/prim_secded",
+  "src/hw/ip/prim/rtl",
+  "src/hw/ip/prim/dv/prim_ram_scr/cpp",
+  "src/hw/dv/verilator/cpp",
+  "src/hw/vendor/lowrisc_ibex/rtl",
+  "src/hw/ip/rv_core_ibex/rtl",
+]
+defines = { SYNTHESIS = "1", IBEX_CUSTOM_PMP_RESET_VALUES = "1" }
+# The memories and the analog and IO blocks, as modules of the design and the model that this
+# variant gives them: the abstract primitives resolve to prim_generic (PRIM_DEFAULT_IMPL defaults to
+# prim_pkg::ImplGeneric) and the AST is upstream's behavioural model.
+macros = [
+  { module = "prim_rom", model = "src/hw/ip/prim_generic/rtl/prim_generic_rom.sv" },
+  { module = "prim_ram_1p", model = "src/hw/ip/prim_generic/rtl/prim_generic_ram_1p.sv" },
+  { module = "prim_ram_2p", model = "src/hw/ip/prim_generic/rtl/prim_generic_ram_2p.sv" },
+  { module = "prim_ram_1r1w", model = "src/hw/ip/prim_generic/rtl/prim_generic_ram_1r1w.sv" },
+  { module = "prim_otp", model = "src/hw/ip/prim_generic/rtl/prim_generic_otp.sv" },
+  { module = "prim_flash", model = "src/hw/ip/prim_generic/rtl/prim_generic_flash.sv" },
+  { module = "prim_pad_wrapper", model = "src/hw/ip/prim_generic/rtl/prim_generic_pad_wrapper.sv" },
+  { module = "ast", model = "src/hw/top_earlgrey/ip/ast/rtl/ast.sv" },
+]
+
+# Clock names and pins as the SDC of upstream defines them. MAIN, USB, IO and AON are outputs of the
+# AST inside the chip (u_ast/clk_src_*_o); the others are chip ports. No period: the SDC has target
+# periods for a generic process, which is not an open PDK.
+[[variant.clock]]
+name = "MAIN_CLK"
+port = "u_ast/clk_src_sys_o"
+
+[[variant.clock]]
+name = "USB_CLK"
+port = "u_ast/clk_src_usb_o"
+
+[[variant.clock]]
+name = "IO_CLK"
+port = "u_ast/clk_src_io_o"
+
+[[variant.clock]]
+name = "AON_CLK"
+port = "u_ast/clk_src_aon_o"
+
+[[variant.clock]]
+name = "JTAG_TCK"
+port = "IOR3"
+
+[[variant.clock]]
+name = "AST_EXT_CLK"
+port = "IOC6"
+
+[[variant.clock]]
+name = "SPI_DEV_CLK"
+port = "SPI_DEV_CLK"
+
+[variant.constraints]
+resets = ["IO_RST_N"]
+sdc = ["constraints/chip_earlgrey_asic.sdc", "constraints/ot.sdc_setup.tcl"]
+
+# Simulation: upstream's Verilator chip target (lowrisc:dv:chip_verilator_sim:0.1: chip_sim_tb around
+# chip_earlgrey_verilator) as hw/dv/tools/dvsim/verilator.hjson builds it. It has its own file list.
+[variant.sim]
+simulator = "verilator"
+top = "chip_sim_tb"
+standalone = true
+files = "variants/earlgrey/sim.f"
+include_dirs = [
+  "src/hw/ip/prim/dv/prim_prince/crypto_dpi_prince",
+  "src/hw/dv/dpi/gpiodpi",
+  "src/hw/dv/dpi/spidpi",
+  "src/hw/dv/dpi/uartdpi",
+  "src/hw/dv/dpi/usbdpi",
+  "src/hw/dv/dpi/common/tcp_server",
+  "src/hw/dv/sv/dv_utils",
+  "src/hw/ip/prim/dv/prim_secded",
+  "src/hw/dv/verilator/simutil_verilator/cpp",
+  "src/hw/ip/prim/rtl",
+  "src/hw/dv/dpi/dmidpi",
+  "src/hw/dv/dpi/jtagdpi",
+  "src/hw/ip/prim/dv/prim_ram_scr/cpp",
+  "src/hw/dv/verilator/cpp",
+  "src/hw/vendor/lowrisc_ibex/rtl",
+  "src/hw/ip/rv_core_ibex/rtl",
+]
+undefine = ["SYNTHESIS"]
+defines = { AST_BYPASS_CLK = "1", PRIM_DEFAULT_IMPL = "prim_pkg::ImplGeneric", RVFI = "1", VERILATOR_MEM_BASE = "268435456", VERILATOR_TEST_STATUS_ADDR = "1092550784", DMIDirectTAP = "1", RV_CORE_IBEX_SIM_SRAM = "1", DISABLE_PRIM_CDC_RAND_DELAY = "" }
+# The options of the sim target (hw/top_earlgrey/dv/verilator/chip_sim.core, edalize's config.mk,
+# recorded in variants/earlgrey/sim-edalize-config.mk.txt) without tracing (--trace, which upstream
+# keeps on, costs build time and is not used), --no-timing (the power-good models of the AST have
+# delays, which a functional simulation ignores), and the include path of the C and C++ sources.
+verilator_flags = [
+  "--exe", "--no-timing", "--unroll-count", "512", "-Wall", "--threads", "4", "-Wno-fatal",
+  "-CFLAGS", "-std=c++17 -Wall -DVL_USER_STOP -DTOPLEVEL_NAME=chip_sim_tb",
+  "-LDFLAGS", "-pthread -lutil -lelf",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/hw/ip/prim/dv/prim_prince/crypto_dpi_prince",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/hw/dv/dpi/gpiodpi",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/hw/dv/dpi/spidpi",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/hw/dv/dpi/uartdpi",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/hw/dv/dpi/usbdpi",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/hw/dv/dpi/common/tcp_server",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/hw/dv/sv/dv_utils",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/hw/ip/prim/dv/prim_secded",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/hw/dv/verilator/simutil_verilator/cpp",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/hw/ip/prim/rtl",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/hw/dv/dpi/dmidpi",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/hw/dv/dpi/jtagdpi",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/hw/ip/prim/dv/prim_ram_scr/cpp",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/hw/dv/verilator/cpp",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/hw/vendor/lowrisc_ibex/rtl",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/hw/ip/rv_core_ibex/rtl",
+]
+dut = "chip_sim_tb.u_dut"
+# The boot ROM and the OTP image are those of upstream's sim_verilator environment: test_rom and
+# img_rma (hw/top_earlgrey/BUILD, sim_verilator_base), prebuilt in the devbundle release of OpenTitan
+# (see recipe/README.md). A workload that has a flash image adds --meminit=flash0.
+args = ["--meminit=rom,${DESIGN_DIR}/sim/test_rom_sim_verilator.39.scr.vmem", "--meminit=otp,${DESIGN_DIR}/sim/img_rma.24.vmem"]
+# The UART text, which the pass checks read, and the cycle count that the simulation prints at its end.
+uart_file = "uart0.log"
+cycles_pattern = 'Executed cycles: +([0-9]+)'
+
+# The boot ROM alone: it prints over the UART and jumps to the (empty) flash; the run ends after a fixed
+# number of cycles.
+[[variant.sim.workload]]
+id = "test_rom"
+image = "sim/test_rom_sim_verilator.39.scr.vmem"
+args = ["--term-after-cycles=250000"]
+pass = { kind = "uart", contains = "Test ROM complete" }
+max_cycles = 250000
+timeout_s = 300
+
+# OpenTitan's own tests (sw/device/tests), built by recipe/build-workloads.sh. Each ends with the OTTF
+# status "PASS!" on the UART, and the simulation ends with it.
+[[variant.sim.workload]]
+id = "uart_smoketest"
+image = "sim/uart_smoketest_sim_verilator.64.vmem"
+args = ["--meminit=flash0,{image}"]
+pass = { kind = "uart", contains = "PASS!" }
+max_cycles = 4000000
+timeout_s = 300
+
+[[variant.sim.workload]]
+id = "crt_test"
+image = "sim/crt_test_sim_verilator.64.vmem"
+args = ["--meminit=flash0,{image}"]
+pass = { kind = "uart", contains = "PASS!" }
+max_cycles = 3000000
+timeout_s = 300
+
+# The longest of the smoke tests of the crypto blocks that were tried (aes 0.43 M, kmac 0.48 M,
+# hmac 0.69 M, otbn 1.0 M cycles): the big number accelerator.
+[[variant.sim.workload]]
+id = "otbn_smoketest"
+image = "sim/otbn_smoketest_sim_verilator.64.vmem"
+args = ["--meminit=flash0,{image}"]
+pass = { kind = "uart", contains = "PASS!" }
+max_cycles = 10000000
+timeout_s = 600

@@ -1,0 +1,2 @@
+src/hw/vendor/lowrisc_ibex.lock.hjson provenance: the revision of the vendored Ibex
+src/hw/vendor/pulp_riscv_dbg.lock.hjson provenance: the revision of the vendored riscv-dbg
