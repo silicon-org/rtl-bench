@@ -21,6 +21,11 @@
             ln -s ${rv.binutils}/bin/riscv64-none-elf-$tool $out/bin/riscv64-unknown-elf-$tool
           done
         '';
+        # The wally testbench runs bin/extractFunctionRadix.sh, whose shebang is /bin/bash;
+        # NixOS has no /bin/bash, so run it with bash from the shell.
+        wallyShims = pkgs.writeShellScriptBin "extractFunctionRadix.sh" ''
+          exec ${pkgs.bash}/bin/bash "$WALLY/bin/extractFunctionRadix.sh" "$@"
+        '';
       in
       {
         devShells.default = pkgs.mkShell {
@@ -38,6 +43,7 @@
             rv.gcc
             rv.binutils
             riscvAliases
+            wallyShims
           ];
           # uv runs upstream scripts (elf2hex) with the Python above, never downloads one.
           UV_PYTHON_DOWNLOADS = "never";
