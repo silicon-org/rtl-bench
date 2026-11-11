@@ -1,0 +1,17 @@
+src/bp_be/src/include
+src/bp_common/src/include
+src/bp_common/test/common
+src/bp_fe/src/include
+src/bp_me/src/include
+src/bp_top/src/include
+src/external/HardFloat/source
+src/external/HardFloat/source/RISCV
+src/external/basejump_stl/bsg_cache
+src/external/basejump_stl/bsg_clk_gen
+src/external/basejump_stl/bsg_dataflow
+src/external/basejump_stl/bsg_dmc
+src/external/basejump_stl/bsg_mem
+src/external/basejump_stl/bsg_misc
+src/external/basejump_stl/bsg_noc
+src/external/basejump_stl/bsg_tag
+src/external/basejump_stl/bsg_test
