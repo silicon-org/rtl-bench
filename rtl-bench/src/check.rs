@@ -61,16 +61,46 @@ pub fn check_design(l: &Loaded) -> Vec<String> {
         licence_files.push((key, &d.licence, &d.licence_files));
     }
     let vendored = f.source.mode == Mode::Vendored;
-    for (key, licence, files) in &licence_files {
+    // The licence of the design covers everything that is vendored: the parts of each
+    // dependency licence are parts of it, and the licence files of the dependencies count
+    // as licence files of the design.
+    let design_parts = licence_parts(&f.source.licence);
+    for (i, d) in f.source.dependency.iter().enumerate() {
+        for part in licence_parts(&d.licence) {
+            if !design_parts.contains(&part) {
+                e.add(
+                    "source.licence",
+                    format!(
+                        "`{}` does not cover `{part}` of source.dependency[{i}] (`{}`)",
+                        f.source.licence, d.licence
+                    ),
+                );
+            }
+        }
+    }
+    let all_files: Vec<&String> = licence_files
+        .iter()
+        .flat_map(|(_, _, fs)| fs.iter())
+        .collect();
+    for (n, (key, licence, files)) in licence_files.iter().enumerate() {
         let k = format!("{key}.licence_files");
         if vendored && files.is_empty() {
             e.add(&k, "a vendored design needs a licence file");
         }
         let mut texts = Vec::new();
-        for file in files.iter() {
+        let own: Vec<&String> = if n == 0 {
+            all_files.clone()
+        } else {
+            files.iter().collect()
+        };
+        for file in own {
             match read_text(dir, file) {
                 Ok(text) => texts.push(text),
-                Err(m) => e.add(&k, m),
+                Err(m) => {
+                    if n != 0 || files.contains(file) {
+                        e.add(&k, m)
+                    }
+                }
             }
         }
         if !files.is_empty() {
@@ -462,15 +492,22 @@ fn list_files(dir: &Path) -> BTreeSet<String> {
     out
 }
 
+/// The parts of an SPDX expression, split at `AND` and `OR` (`A WITH B` stays one part).
+pub fn licence_parts(expr: &str) -> Vec<String> {
+    expr.replace(['(', ')'], " ")
+        .replace(" AND ", "|")
+        .replace(" OR ", "|")
+        .split('|')
+        .map(|p| p.trim().to_string())
+        .collect()
+}
+
 /// The first part of an SPDX expression that no licence text states, if any. The parts
 /// are split at `AND` and `OR` and every one must be stated (the check is conservative);
 /// `A WITH B` is stated by a text with exactly that line, or by texts of both A and B.
 pub fn unstated(expr: &str, texts: &[String]) -> Option<String> {
-    let flat = expr
-        .replace(['(', ')'], " ")
-        .replace(" AND ", "|")
-        .replace(" OR ", "|");
-    for part in flat.split('|').map(str::trim) {
+    for part in licence_parts(expr) {
+        let part = part.as_str();
         let stated = |id: &str| texts.iter().any(|t| licence_matches(id, t));
         let ok = stated(part)
             || part
@@ -700,6 +737,28 @@ max_cycles = 100
             unstated("SHL-2.1", std::slice::from_ref(&old)),
             Some("SHL-2.1".to_string())
         );
+    }
+
+    const DEP: &str = "licence_files = [\"src/LICENSE\"]\n\n[[source.dependency]]\nrepository = \"https://example.org/dep\"\ncommit = \"0123456789abcdef0123456789abcdef01234567\"\nlicence = \"Apache-2.0\"\nlicence_files = [\"src/APACHE\"]\n";
+
+    #[test]
+    fn design_licence_must_cover_dependency_licences() {
+        let t = good();
+        fs::write(
+            t.path().join("designs/demo/src/APACHE"),
+            "Apache License\nVersion 2.0",
+        )
+        .unwrap();
+        edit(&t, "licence_files = [\"src/LICENSE\"]\n", DEP);
+        let errs = run(&t);
+        assert!(
+            errs.iter()
+                .any(|m| m.contains("source.licence") && m.contains("does not cover `Apache-2.0`")),
+            "{errs:?}"
+        );
+        // the combined expression passes, with the dependency's file as licence file of the design
+        edit(&t, "licence = \"MIT\"", "licence = \"MIT AND Apache-2.0\"");
+        assert_eq!(run(&t), Vec::<String>::new());
     }
 
     #[test]

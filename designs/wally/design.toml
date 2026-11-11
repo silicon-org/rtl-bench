@@ -9,7 +9,7 @@ commit = "90259bdca99c187eb1d482837d54f5c618884ef2"
 mode = "vendored"
 # Most files: Apache-2.0 WITH SHL-2.1 (SPDX line of src/LICENSE and of the sources). Five files carry
 # an MIT notice instead (see recipe/README.md); they stand in as the licence files of MIT.
-licence = "(Apache-2.0 WITH SHL-2.1) AND MIT"
+licence = "(Apache-2.0 WITH SHL-2.1) AND MIT AND Apache-2.0"
 licence_files = [
   "src/LICENSE",
   "licences/Apache-2.0.txt",

@@ -7,7 +7,8 @@ description = "Linux-capable RISC-V multicore with a coherent cache system, in S
 repository = "https://github.com/black-parrot/black-parrot"
 commit = "909619a68f3541a4cd0973767daf2a561d1f8c95"
 mode = "vendored"
-licence = "BSD-3-Clause"
+# BlackParrot BSD-3-Clause; BaseJump STL SHL-0.51; HardFloat BSD-3-Clause.
+licence = "BSD-3-Clause AND SHL-0.51"
 licence_files = ["src/LICENSE"]
 
 # The submodules that upstream's file list (bp_top/flist.vcs) takes files from, at the commits that
