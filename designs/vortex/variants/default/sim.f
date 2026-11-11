@@ -1,0 +1,13 @@
+src/sim/rtlsim/rtlsim_shim.sv
+src/sw/common/util.cpp
+src/sim/common/mem.cpp
+src/sw/common/softfloat_ext.cpp
+src/sw/common/rvfloats.cpp
+src/sim/common/dram_sim.cpp
+src/sim/common/elf_loader.cpp
+src/sim/common/host_monitor.cpp
+src/sim/common/cout_drainer.cpp
+src/hw/dpi/dpi_util.cpp
+src/hw/dpi/dpi_float.cpp
+src/sim/rtlsim/processor.cpp
+src/sim/rtlsim/main.cpp

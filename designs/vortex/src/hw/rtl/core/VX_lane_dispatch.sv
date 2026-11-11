@@ -1,0 +1,266 @@
+// Copyright © 2019-2023
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+`include "VX_define.vh"
+
+module VX_lane_dispatch import VX_gpu_pkg::*; #(
+    parameter BLOCK_SIZE = 1,
+    parameter NUM_LANES  = 1,
+    parameter OUT_BUF    = 0,
+    parameter MAX_FANOUT = `MAX_FANOUT,
+    // dispatch ports served, starting at issue slice port_base
+    parameter NUM_PORTS  = `VX_CFG_ISSUE_WIDTH
+) (
+    input  wire             clk,
+    input  wire             reset,
+
+    input  wire [ISSUE_ISW_W-1:0] port_base,
+
+    // inputs
+    VX_dispatch_if.slave    dispatch_if [NUM_PORTS],
+
+    // outputs
+    VX_execute_if.master    execute_if [BLOCK_SIZE]
+);
+    `STATIC_ASSERT (`IS_DIVISBLE(NUM_PORTS, BLOCK_SIZE), ("invalid parameter"))
+    `STATIC_ASSERT (`IS_DIVISBLE(`VX_CFG_SIMD_WIDTH, NUM_LANES), ("invalid parameter"))
+    // a batched dispatch derives the issue slot from the batch index alone
+    `STATIC_ASSERT ((NUM_PORTS == `VX_CFG_ISSUE_WIDTH) || (BLOCK_SIZE == NUM_PORTS), ("invalid parameter"))
+
+    `DECL_EXECUTE_T (pe, NUM_LANES);
+    localparam IN_DATAW     = $bits(dispatch_t);
+    localparam OUT_DATAW    = $bits(pe_execute_t);
+
+    localparam BLOCK_SIZE_W = `LOG2UP(BLOCK_SIZE);
+    localparam NUM_PACKETS  = `VX_CFG_SIMD_WIDTH / NUM_LANES;
+    localparam LPID_BITS    = `CLOG2(NUM_PACKETS);
+    localparam LPID_WIDTH   = `UP(LPID_BITS);
+    localparam GPID_BITS    = `CLOG2(`VX_CFG_NUM_THREADS / NUM_LANES);
+    localparam GPID_WIDTH   = `UP(GPID_BITS);
+    localparam BATCH_COUNT  = NUM_PORTS / BLOCK_SIZE;
+    localparam BATCH_COUNT_W= `LOG2UP(BATCH_COUNT);
+    localparam ISSUE_W      = `LOG2UP(NUM_PORTS);
+    localparam FANOUT_ENABLE= (`VX_CFG_SIMD_WIDTH > (MAX_FANOUT + MAX_FANOUT /2));
+
+    localparam DATA_IN_TMASK_OFF = IN_DATAW - (UUID_WIDTH + ISSUE_WIS_W + NCTA_WIDTH + SIMD_IDX_W + `VX_CFG_SIMD_WIDTH);
+    localparam DATA_IN_OPDS_OFF = 1 + 1;
+
+    typedef struct packed {
+        logic [2:0][NUM_LANES-1:0][`VX_CFG_XLEN-1:0] rsdata;
+        logic [NUM_LANES-1:0] tmask;
+    } packet_t;
+
+    wire [NUM_PORTS-1:0] dispatch_valid;
+    wire [NUM_PORTS-1:0][IN_DATAW-1:0] dispatch_data;
+    wire [NUM_PORTS-1:0] dispatch_ready;
+
+    for (genvar i = 0; i < NUM_PORTS; ++i) begin : g_dispatch_data
+        assign dispatch_valid[i] = dispatch_if[i].valid;
+        assign dispatch_data[i] = dispatch_if[i].data;
+        assign dispatch_if[i].ready = dispatch_ready[i];
+    end
+
+    wire [BLOCK_SIZE-1:0] block_valid;
+    wire [BLOCK_SIZE-1:0] block_ready;
+    wire [BLOCK_SIZE-1:0][NUM_LANES-1:0] block_tmask;
+    wire [BLOCK_SIZE-1:0][2:0][NUM_LANES-1:0][`VX_CFG_XLEN-1:0] block_rsdata;
+    wire [BLOCK_SIZE-1:0][LPID_WIDTH-1:0] block_pid;
+    wire [BLOCK_SIZE-1:0] block_sop;
+    wire [BLOCK_SIZE-1:0] block_eop;
+    wire [BLOCK_SIZE-1:0] block_done;
+
+    wire batch_done = (& block_done);
+
+    // batch select logic
+
+    logic [BATCH_COUNT_W-1:0] batch_idx;
+
+    if (BATCH_COUNT != 1) begin : g_batch_idx
+        wire [BATCH_COUNT_W-1:0] batch_idx_n;
+        wire [BATCH_COUNT-1:0] valid_batches;
+        for (genvar i = 0; i < BATCH_COUNT; ++i) begin : g_valid_batches
+            assign valid_batches[i] = | dispatch_valid[i * BLOCK_SIZE +: BLOCK_SIZE];
+        end
+
+        wire batch_valid_n;
+
+        // Round-robin from the last granted batch: no issue slice is favored,
+        // so a warp's dispatch latency does not depend on its slice.
+        VX_generic_arbiter #(
+            .NUM_REQS    (BATCH_COUNT),
+            .TYPE        ("R")
+        ) batch_sel (
+            .clk          (clk),
+            .reset        (reset),
+            .requests     (valid_batches),
+            .grant_index  (batch_idx_n),
+            `UNUSED_PIN (grant_onehot),
+            .grant_valid  (batch_valid_n),
+            .grant_ready  (batch_done)
+        );
+
+        // the arbiter's state: the last granted batch
+        always @(posedge clk) begin
+            if (reset) begin
+                batch_idx <= BATCH_COUNT_W'(BATCH_COUNT-1);
+            end else if (batch_done && batch_valid_n) begin
+                batch_idx <= batch_idx_n;
+            end
+        end
+    end else begin : g_batch_idx_0
+        assign batch_idx = 0;
+        `UNUSED_VAR (batch_done)
+    end
+
+    if (BATCH_COUNT != 1) begin : g_no_port_base
+        `UNUSED_VAR (port_base)
+    end
+
+    wire [BLOCK_SIZE-1:0][ISSUE_W-1:0] issue_indices;
+    for (genvar block_idx = 0; block_idx < BLOCK_SIZE; ++block_idx) begin : g_issue_indices
+        assign issue_indices[block_idx] = ISSUE_W'(batch_idx * BLOCK_SIZE) + ISSUE_W'(block_idx);
+    end
+
+    for (genvar block_idx = 0; block_idx < BLOCK_SIZE; ++block_idx) begin : g_blocks
+
+        wire [ISSUE_W-1:0] issue_idx = issue_indices[block_idx];
+        wire [ISSUE_WIS_W-1:0] dispatch_wis    = dispatch_data[issue_idx][DATA_IN_TMASK_OFF + `VX_CFG_SIMD_WIDTH + SIMD_IDX_W + NCTA_WIDTH +: ISSUE_WIS_W];
+        wire [NCTA_WIDTH-1:0]  dispatch_cta_id = dispatch_data[issue_idx][DATA_IN_TMASK_OFF + `VX_CFG_SIMD_WIDTH + SIMD_IDX_W +: NCTA_WIDTH];
+        wire [SIMD_IDX_W-1:0]  dispatch_sid    = dispatch_data[issue_idx][DATA_IN_TMASK_OFF + `VX_CFG_SIMD_WIDTH +: SIMD_IDX_W];
+        wire dispatch_sop = dispatch_data[issue_idx][1];
+        wire dispatch_eop = dispatch_data[issue_idx][0];
+
+        wire [`VX_CFG_SIMD_WIDTH-1:0] dispatch_tmask;
+        wire [2:0][`VX_CFG_SIMD_WIDTH-1:0][`VX_CFG_XLEN-1:0] dispatch_rsdata;
+
+        assign dispatch_tmask = dispatch_data[issue_idx][DATA_IN_TMASK_OFF +: `VX_CFG_SIMD_WIDTH];
+        assign dispatch_rsdata[0] = dispatch_data[issue_idx][DATA_IN_OPDS_OFF + 2 * `VX_CFG_SIMD_WIDTH * `VX_CFG_XLEN +: `VX_CFG_SIMD_WIDTH * `VX_CFG_XLEN];
+        assign dispatch_rsdata[1] = dispatch_data[issue_idx][DATA_IN_OPDS_OFF + 1 * `VX_CFG_SIMD_WIDTH * `VX_CFG_XLEN +: `VX_CFG_SIMD_WIDTH * `VX_CFG_XLEN];
+        assign dispatch_rsdata[2] = dispatch_data[issue_idx][DATA_IN_OPDS_OFF + 0 * `VX_CFG_SIMD_WIDTH * `VX_CFG_XLEN +: `VX_CFG_SIMD_WIDTH * `VX_CFG_XLEN];
+
+        wire valid_p, ready_p;
+
+        if (`VX_CFG_SIMD_WIDTH != NUM_LANES) begin : g_partial_simd
+
+            packet_t [NUM_PACKETS-1:0] packets;
+
+            for (genvar i = 0; i < NUM_PACKETS; ++i) begin : g_per_packet_data
+                for (genvar j = 0; j < NUM_LANES; ++j) begin : g_j
+                    localparam k = i * NUM_LANES + j;
+                    assign packets[i].tmask[j]   = dispatch_tmask[k];
+                    assign packets[i].rsdata[0][j] = dispatch_rsdata[0][k];
+                    assign packets[i].rsdata[1][j] = dispatch_rsdata[1][k];
+                    assign packets[i].rsdata[2][j] = dispatch_rsdata[2][k];
+                end
+            end
+
+            wire [LPID_WIDTH-1:0] start_p;
+            wire is_first_p, is_last_p;
+            packet_t block_packet;
+
+            wire fire_p = valid_p && ready_p;
+
+            VX_nz_iterator #(
+                .DATAW   ($bits(packet_t)),
+                .KEYW    (NUM_LANES),
+                .N       (NUM_PACKETS),
+                .OUT_REG (FANOUT_ENABLE)
+            ) packet_iter (
+                .clk     (clk),
+                .reset   (reset),
+                .valid_in(dispatch_valid[issue_idx]),
+                .data_in (packets),
+                .next    (fire_p),
+                .valid_out(valid_p),
+                .data_out(block_packet),
+                .pid     (start_p),
+                .sop     (is_first_p),
+                .eop     (is_last_p)
+            );
+
+            assign block_tmask[block_idx] = block_packet.tmask;
+            assign block_rsdata[block_idx] = block_packet.rsdata;
+            assign block_pid[block_idx]   = start_p;
+            assign block_sop[block_idx]   = is_first_p;
+            assign block_eop[block_idx]   = is_last_p;
+            assign block_valid[block_idx] = valid_p;
+            assign block_ready[block_idx] = ready_p;
+            assign block_done[block_idx]  = (fire_p && is_last_p) || ~dispatch_valid[issue_idx];
+        end else begin : g_full_simd
+            assign valid_p = dispatch_valid[issue_idx];
+            assign block_tmask[block_idx] = dispatch_tmask;
+            assign block_rsdata[block_idx] = dispatch_rsdata;
+            assign block_pid[block_idx]   = 0;
+            assign block_sop[block_idx]   = 1;
+            assign block_eop[block_idx]   = 1;
+            assign block_valid[block_idx] = valid_p;
+            assign block_ready[block_idx] = ready_p;
+            assign block_done[block_idx]  = ready_p || ~valid_p;
+        end
+
+        wire [ISSUE_ISW_W-1:0] isw;
+        if (BATCH_COUNT != 1) begin : g_isw_batch
+            if (BLOCK_SIZE != 1) begin : g_block
+                assign isw = {batch_idx, BLOCK_SIZE_W'(block_idx)};
+            end else begin : g_no_block
+                assign isw = batch_idx;
+            end
+        end else begin : g_isw
+            assign isw = port_base + ISSUE_ISW_W'(block_idx);
+        end
+
+        wire [NW_WIDTH-1:0] block_wid = wis_to_wid(dispatch_wis, isw);
+        wire [GPID_WIDTH-1:0] warp_pid = GPID_WIDTH'(block_pid[block_idx]) + GPID_WIDTH'(dispatch_sid * NUM_PACKETS);
+
+        wire warp_sop = block_sop[block_idx] && dispatch_sop;
+        wire warp_eop = block_eop[block_idx] && dispatch_eop;
+
+        VX_elastic_buffer #(
+            .DATAW   (OUT_DATAW),
+            .SIZE    (`TO_OUT_BUF_SIZE(OUT_BUF)),
+            .OUT_REG (`TO_OUT_BUF_REG(OUT_BUF))
+        ) buf_out (
+            .clk       (clk),
+            .reset     (reset),
+            .valid_in  (valid_p),
+            .ready_in  (ready_p),
+            .data_in   ({
+                dispatch_data[issue_idx][IN_DATAW-1 -: UUID_WIDTH],
+                block_wid,
+                dispatch_cta_id,
+                block_tmask[block_idx],
+                warp_pid,
+                warp_sop,
+                warp_eop,
+                dispatch_data[issue_idx][DATA_IN_TMASK_OFF-1 : (DATA_IN_OPDS_OFF + NUM_SRC_OPDS * `VX_CFG_SIMD_WIDTH * `VX_CFG_XLEN)],
+                block_rsdata[block_idx][0],
+                block_rsdata[block_idx][1],
+                block_rsdata[block_idx][2]
+            }),
+            .data_out  (execute_if[block_idx].data),
+            .valid_out (execute_if[block_idx].valid),
+            .ready_out (execute_if[block_idx].ready)
+        );
+    end
+
+    // release the dispatch interface when all packets are sent
+    reg [NUM_PORTS-1:0] ready_in;
+    always @(*) begin
+        ready_in = 0;
+        for (integer block_idx = 0; block_idx < BLOCK_SIZE; ++block_idx) begin
+            ready_in[issue_indices[block_idx]] = block_valid[block_idx] && block_ready[block_idx] && block_eop[block_idx];
+        end
+    end
+    assign dispatch_ready = ready_in;
+
+endmodule

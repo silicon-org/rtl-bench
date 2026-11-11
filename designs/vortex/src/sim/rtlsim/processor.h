@@ -1,0 +1,65 @@
+// Copyright © 2019-2023
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#pragma once
+
+#include <stdint.h>
+
+namespace vortex {
+
+class RAM;
+class HostMonitor;
+class CoutDrainer;
+
+class Processor {
+public:
+
+  Processor();
+  ~Processor();
+
+  void attach_ram(RAM* ram);
+
+  // When `monitor` is non-null and enabled, the run loop polls it each
+  // cycle and stops as soon as the HTIF `tohost` word is written. When
+  // `cout_drainer` is non-null, the run loop drains the lossless COUT
+  // stream-ring every cycle — only standalone rtlsim wires this; the
+  // runtime path leaves it null and drains COUT itself.
+  void run(HostMonitor* monitor = nullptr, CoutDrainer* cout_drainer = nullptr);
+
+  int dcr_write(uint32_t addr, uint32_t value);
+
+  int dcr_read(uint32_t addr, uint32_t tag, uint32_t* value);
+
+  // Clock the device until busy drops, i.e. until memory has taken every
+  // write it issued.
+  void drain();
+
+  // Device-memory access through the command processor's port into the
+  // last-level cache. A write returns once every request entered the port;
+  // the device orders it ahead of the next launch. A read returns with data.
+  void cp_mem_write(uint64_t addr, const void* src, uint64_t size, bool noalloc);
+
+  void cp_mem_read(uint64_t addr, void* dst, uint64_t size);
+
+  // The command processor's DMA is a client of the last-level cache, of
+  // this size in bytes.
+  bool cp_llc_client() const;
+  uint64_t cp_llc_size() const;
+
+private:
+
+  class Impl;
+  Impl* impl_;
+};
+
+}

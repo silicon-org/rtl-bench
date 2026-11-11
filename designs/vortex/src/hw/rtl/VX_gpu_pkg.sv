@@ -1,0 +1,2455 @@
+// Copyright © 2019-2023
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+`ifndef VX_GPU_PKG_VH
+`define VX_GPU_PKG_VH
+
+`include "VX_define.vh"
+
+`IGNORE_UNUSED_BEGIN
+
+package VX_gpu_pkg;
+
+    localparam NC_BITS = `CLOG2(`VX_CFG_NUM_CORES);
+    localparam NW_BITS = `CLOG2(`VX_CFG_NUM_WARPS);
+    localparam NT_BITS = `CLOG2(`VX_CFG_NUM_THREADS);
+    localparam NB_BITS = `CLOG2(`VX_CFG_NUM_BARRIERS);
+
+    localparam NC_WIDTH = `UP(NC_BITS);
+    localparam NW_WIDTH = `UP(NW_BITS);
+    localparam NT_WIDTH = `UP(NT_BITS);
+    localparam NB_WIDTH = `UP(NB_BITS);
+
+    // core index across all clusters
+    localparam CORE_ID_BITS  = `CLOG2(`VX_CFG_NUM_CLUSTERS * `VX_CFG_NUM_CORES);
+    localparam CORE_ID_WIDTH = `UP(CORE_ID_BITS);
+    localparam CLUSTER_ID_WIDTH = `LOG2UP(`VX_CFG_NUM_CLUSTERS);
+
+    localparam NUM_CTA_MAX = `VX_CFG_NUM_WARPS;
+    localparam NCTA_BITS  = `CLOG2(NUM_CTA_MAX);
+    localparam NCTA_WIDTH = `UP(NCTA_BITS);
+
+    localparam XLENB    = `VX_CFG_XLEN / 8;
+    localparam XLENB_W  = `CLOG2(XLENB);
+    localparam BYTESEL_BITS = (XLENB_W + XLENB_W);
+    localparam [BYTESEL_BITS-1:0] BYTESEL_DEFAULT = {XLENB_W'(XLENB-1), XLENB_W'(0)};
+
+    localparam RV_REGS = 32;
+    localparam RV_REGS_BITS = 5;
+
+    localparam RV_RD  = 0;
+    localparam RV_RS1 = 1;
+    localparam RV_RS2 = 2;
+    localparam RV_RS3 = 3;
+
+    localparam REG_TYPE_I = 0;
+    localparam REG_TYPE_F = 1;
+
+    localparam REG_TYPES = 1 + `VX_CFG_EXT_F_ENABLED;
+
+    localparam NUM_REGS = (REG_TYPES * RV_REGS);
+
+    localparam REG_TYPE_BITS = `LOG2UP(REG_TYPES);
+
+    localparam NUM_REGS_BITS = `CLOG2(NUM_REGS);
+
+    // Generic shadow-register namespace. Each bit is a slot that any
+    // instruction class may claim for RAW/WAR hazard tracking via the
+    // scoreboard's wr_xregs / rd_xregs masks. The decoder maps specific
+    // semantics (fflags, frm, future TCU_LD metadata slots, etc.) to
+    // these bits.
+    localparam XREG_0      = 0;
+    localparam XREG_1      = 1;
+    localparam NUM_XREGS   = 2;
+
+    localparam DV_STACK_SIZE = `UP(`VX_CFG_NUM_THREADS-1);
+    localparam DV_STACK_SIZEW = `LOG2UP(DV_STACK_SIZE);
+
+    localparam PERF_CTR_BITS = 44;
+
+    localparam SIMD_COUNT = `VX_CFG_NUM_THREADS / `VX_CFG_SIMD_WIDTH;
+    localparam SIMD_IDX_BITS = `CLOG2(SIMD_COUNT);
+    localparam SIMD_IDX_W = `UP(SIMD_IDX_BITS);
+
+    localparam NUM_OPCS_BITS = `CLOG2(`VX_CFG_NUM_OPCS);
+    localparam NUM_OPCS_W = `UP(NUM_OPCS_BITS);
+
+    localparam BAR_ADDR_BITS = NW_BITS + NB_BITS;
+    localparam BAR_ADDR_W = `UP(BAR_ADDR_BITS);
+    localparam BAR_ID_SHIFT = 8;
+
+    localparam BAR_SIZE_W = `MAX(`MAX(NW_WIDTH, CORE_ID_WIDTH), `CLOG2(`VX_CFG_MAX_BAR_EVENTS));
+
+    localparam UOP_PACKLD = 0;
+    localparam UOP_TCU = UOP_PACKLD + 1;
+    // One graphics expander slot, not two. Each slot costs a full ibuffer_t input
+    // on the sequencer's output mux (uop_out_data[UOP_MAX]) plus a bit of its
+    // priority encoder, so the OM export shares the graphics expander rather than
+    // owning one: the two are combinational rewrites of ibuf_in with mutually
+    // exclusive selects (EX_LSU + export_mask vs EX_SFU + INST_SFU_RTUW).
+    localparam UOP_GFX = UOP_TCU + `VX_CFG_EXT_TCU_ENABLED;
+    // atomics with .aq/.rl expand into fences around the atomic
+    localparam UOP_AMO = UOP_GFX + `EXT_GFX_ANY_ENABLED;
+    localparam UOP_MAX = UOP_AMO + `VX_CFG_EXT_A_ENABLED;
+    localparam UOP_CTR_W = 8;
+
+    localparam CTA_TID_WIDTH = `UP(NW_BITS + NT_BITS);
+
+`ifndef NDEBUG
+    localparam UUID_WIDTH = 44;
+`elsif SCOPE
+    localparam UUID_WIDTH = 44;
+`else
+    localparam UUID_WIDTH = 1;
+`endif
+
+`ifndef NDEBUG
+    localparam PC_BITS = `VX_CFG_XLEN;
+    function automatic logic [`VX_CFG_XLEN-1:0] to_fullPC(input logic[PC_BITS-1:0] pc);
+        to_fullPC = `VX_CFG_XLEN'(pc);
+    endfunction
+    function automatic logic [PC_BITS-1:0] from_fullPC(input logic[`VX_CFG_XLEN-1:0] pc);
+        from_fullPC = pc;
+    endfunction
+`elsif VX_CFG_EXT_C_ENABLE
+    // With the compressed extension, branch targets and warp PCs may be 2-byte aligned.
+    localparam PC_BITS = (`VX_CFG_XLEN-1);
+    function automatic logic [`VX_CFG_XLEN-1:0] to_fullPC(input logic[PC_BITS-1:0] pc);
+        to_fullPC = `VX_CFG_XLEN'({pc, 1'b0});
+    endfunction
+    function automatic logic [PC_BITS-1:0] from_fullPC(input logic[`VX_CFG_XLEN-1:0] pc);
+        from_fullPC = PC_BITS'(pc >> 1);
+    endfunction
+`else
+    localparam PC_BITS = (`VX_CFG_XLEN-2);
+    function automatic logic [`VX_CFG_XLEN-1:0] to_fullPC(input logic[PC_BITS-1:0] pc);
+        to_fullPC = `VX_CFG_XLEN'({pc, 2'b0});
+    endfunction
+    function automatic logic [PC_BITS-1:0] from_fullPC(input logic[`VX_CFG_XLEN-1:0] pc);
+        from_fullPC = PC_BITS'(pc >> 2);
+    endfunction
+`endif
+
+    localparam NUM_SRC_OPDS = 3;
+    localparam SRC_OPD_BITS = `CLOG2(NUM_SRC_OPDS);
+    localparam SRC_OPD_WIDTH = `UP(SRC_OPD_BITS);
+    localparam NUM_SOCKETS = `UP(`VX_CFG_NUM_CORES / `VX_CFG_SOCKET_SIZE);
+
+    // Per-thread stack window: one stack per hardware thread below the stack base.
+    localparam NUM_STACKS = `VX_CFG_NUM_CLUSTERS * NUM_SOCKETS * `VX_CFG_SOCKET_SIZE * `VX_CFG_NUM_WARPS * `VX_CFG_NUM_THREADS;
+    localparam [`VX_CFG_XLEN-1:0] STACK_WINDOW_TOP    = `VX_CFG_XLEN'(`VX_MEM_STACK_BASE_ADDR);
+    localparam [`VX_CFG_XLEN-1:0] STACK_WINDOW_SPAN   = `VX_CFG_XLEN'(NUM_STACKS) << `VX_MEM_STACK_LOG2_SIZE;
+    localparam [`VX_CFG_XLEN-1:0] STACK_WINDOW_BOTTOM = STACK_WINDOW_TOP - STACK_WINDOW_SPAN;
+
+
+    // ===== AMO (RVA) sideband =====================================
+    // Fields are only meaningful when amo_valid==1; the bank's reservation
+    // table keys on hart_id = make_hart_id(cid, wid, tid).
+    // MINU/MAXU collapse into MIN/MAX + amo_unsigned.
+
+    // make_hart_id(cid, wid, tid) — packed concatenation, low bits = tid; cid is
+    // device-wide, so harts of different clusters stay distinct at a shared LLC.
+    localparam HART_ID_BITS = CORE_ID_BITS + NW_BITS + NT_BITS;
+    localparam HART_ID_WIDTH = `UP(HART_ID_BITS);
+
+    // ───────────────────────────────────────────────────────────────────────
+    // `mem_bus_attr_t` — single attr type shared by every memory bus.
+    // VX_lsu_mem_if carries it per-lane via req_data.user.
+    // VX_mem_bus_if carries one scalar mem_bus_attr_t per request via req_data.attr.
+    //
+    // Field order is LOAD-BEARING: MEM_ATTR_*_OFFS localparams depend
+    // on it. Don't reorder without updating offsets.
+    // ───────────────────────────────────────────────────────────────────────
+
+    // Typed AMO opcode enum. Defined unconditionally so AMO_ENABLE can be a
+    // parameter (not ifdef) on the cache hierarchy. When EXT_A_ENABLE is
+    // undefined, the struct bits are still allocated in the attr field but
+    // the cache's AMO logic is generated away by AMO_ENABLE=0.
+    typedef enum logic [3:0] {
+        AMO_OP_LR    = 4'h0,
+        AMO_OP_SC    = 4'h1,
+        AMO_OP_ADD   = 4'h2,
+        AMO_OP_SWAP  = 4'h3,
+        AMO_OP_XOR   = 4'h4,
+        AMO_OP_OR    = 4'h5,
+        AMO_OP_AND   = 4'h6,
+        AMO_OP_MIN   = 4'h7,
+        AMO_OP_MAX   = 4'h8,
+        // MINU/MAXU collapse into MIN/MAX + amo_unsigned bit.
+        AMO_OP_CAS   = 4'h9
+    } amo_op_e;
+
+    // Slim AMO sideband. width derives from byteen popcount at the cache
+    // bank; rhs is read from the request's data field. Includes scalar
+    // hart_id for the LLC reservation table.
+    // Compare-and-swap needs a third operand, and the request's single data
+    // word already carries the swap value, so the comparand travels here. It
+    // must reach wherever the read-modify-write commits, which is the local
+    // bank for shared memory and the last-level bank for global memory.
+    typedef struct packed {
+        logic [HART_ID_WIDTH-1:0]   hart_id;
+    `ifdef VX_CFG_EXT_ZACAS_ENABLE
+        logic [`VX_CFG_XLEN-1:0]     amo_cmp;
+    `endif
+        logic                        amo_unsigned;
+        amo_op_e                     amo_op;
+        logic                        amo_valid;
+    } amo_req_t;
+    localparam AMO_REQ_BITS = $bits(amo_req_t);
+
+    // Cross-cache mem-bus attr — FIXED OFFSETS so arbitration is clean.
+    // Shared by every VX_mem_bus_if instance that carries attr.
+    // is_flush at LSB so dcr_flush can drive it deterministically.
+    // is_addr_om is appended ABOVE amo, deliberately: the amo field is cast by
+    // offset (VX_cache_bank), so inserting a bit below it would silently shift
+    // MEM_ATTR_AMO_OFFS and reinterpret the AMO sideband. is_noalloc sits above
+    // amo for the same reason: a write that misses a write-around cache goes to
+    // memory instead of allocating.
+    typedef struct packed {
+        logic                        is_noalloc;    // MEM_ATTR_NOALLOC_OFFS
+        amo_req_t                    amo;           // MEM_ATTR_AMO_OFFS   = 4
+        logic                        is_addr_om;    // MEM_ATTR_OM_OFFS    = 3
+        logic                        is_addr_local; // MEM_ATTR_LOCAL_OFFS = 2
+        logic                        is_addr_io;    // MEM_ATTR_IO_OFFS    = 1
+        logic                        is_flush;      // MEM_ATTR_FLUSH_OFFS = 0
+    } mem_bus_attr_t;
+
+    localparam MEM_ATTR_FLUSH_OFFS  = 0;
+    localparam MEM_ATTR_IO_OFFS     = 1;
+    localparam MEM_ATTR_LOCAL_OFFS  = 2;
+    localparam MEM_ATTR_OM_OFFS     = 3;
+    localparam MEM_ATTR_AMO_OFFS    = 4;
+    localparam MEM_ATTR_NOALLOC_OFFS = MEM_ATTR_AMO_OFFS + AMO_REQ_BITS;
+
+    // Total width of the mem-bus attr field. Use this as the parameter
+    // default for VX_mem_bus_if's ATTR_WIDTH parameter and as the
+    // wire/reg sizing for any per-cache plumbing.
+    localparam MEM_ATTR_WIDTH = $bits(mem_bus_attr_t);
+
+    // Cache bank-select hash: XORed into the raw bank bits, a function of the
+    // line address above them, so XORing it again restores the raw bits. IPOLY
+    // for 16 and 32 banks (Rau, ISCA 1991: conflict-free for power-of-two
+    // strides); an XOR fold of the bits above the bank field otherwise.
+    function automatic logic [7:0] cache_bank_hash(input logic [31:0] hi, input integer bits);
+        logic [7:0] f;
+        f = '0;
+        if (bits == 4) begin
+            f[0] = hi[11] ^ hi[10] ^ hi[9] ^ hi[8] ^ hi[6] ^ hi[4] ^ hi[3] ^ hi[0];
+            f[1] = hi[12] ^ hi[8]  ^ hi[7] ^ hi[6] ^ hi[5] ^ hi[3] ^ hi[1] ^ hi[0];
+            f[2] = hi[9]  ^ hi[8]  ^ hi[7] ^ hi[6] ^ hi[4] ^ hi[2] ^ hi[1];
+            f[3] = hi[10] ^ hi[9]  ^ hi[8] ^ hi[7] ^ hi[5] ^ hi[3] ^ hi[2];
+        end else if (bits == 5) begin
+            f[0] = hi[13] ^ hi[12] ^ hi[11] ^ hi[10] ^ hi[9] ^ hi[6] ^ hi[5] ^ hi[3] ^ hi[0];
+            f[1] = hi[14] ^ hi[13] ^ hi[12] ^ hi[11] ^ hi[10] ^ hi[7] ^ hi[6] ^ hi[4] ^ hi[1];
+            f[2] = hi[14] ^ hi[10] ^ hi[9]  ^ hi[8]  ^ hi[7]  ^ hi[6] ^ hi[3] ^ hi[2] ^ hi[0];
+            f[3] = hi[11] ^ hi[10] ^ hi[9]  ^ hi[8]  ^ hi[7]  ^ hi[4] ^ hi[3] ^ hi[1];
+            f[4] = hi[12] ^ hi[11] ^ hi[10] ^ hi[9]  ^ hi[8]  ^ hi[5] ^ hi[4] ^ hi[2];
+        end else if (bits > 0 && bits <= 8) begin
+            for (integer i = 0; i < 15; ++i) begin
+                if ((i % bits) == 0) begin
+                    f = f ^ (8'(hi >> i) & 8'((1 << bits) - 1));
+                end
+            end
+        end
+        return f;
+    endfunction
+
+    // Cache set-index hash: XORed into the raw set bits, an XOR fold of the
+    // line's tag, so a power-of-two stride that keeps the raw set fixed walks
+    // the sets instead. The tag is stored unchanged, so XORing the same fold
+    // again restores the raw set bits.
+    function automatic logic [15:0] cache_set_hash(input logic [31:0] tag, input integer bits);
+        logic [15:0] f;
+        f = '0;
+        if (bits > 0 && bits <= 16) begin
+            for (integer i = 0; i < 32; ++i) begin
+                if ((i % bits) == 0) begin
+                    f = f ^ (16'(tag >> i) & 16'((1 << bits) - 1));
+                end
+            end
+        end
+        return f;
+    endfunction
+
+    localparam VX_DCR_ADDR_WIDTH = `VX_DCR_ADDR_BITS;
+    localparam VX_DCR_DATA_WIDTH = `VX_DCR_DATA_BITS;
+
+`ifdef VX_DBG_STALL_TIMEOUT
+    localparam STALL_TIMEOUT = `VX_DBG_STALL_TIMEOUT;
+`else
+    localparam STALL_TIMEOUT = (100000 * (1 << (`VX_CFG_L2_ENABLED + `VX_CFG_L3_ENABLED)));
+`endif
+
+    ///////////////////////////////////////////////////////////////////////////
+
+    localparam EX_ALU = 0;
+    localparam EX_LSU = 1;
+    localparam EX_SFU = 2;
+    localparam EX_FPU = (EX_SFU + `VX_CFG_EXT_F_ENABLED);
+    localparam EX_TCU = (EX_FPU + `VX_CFG_EXT_TCU_ENABLED);
+
+    localparam NUM_EX_UNITS = EX_TCU + 1;
+    localparam EX_BITS = `CLOG2(NUM_EX_UNITS);
+    localparam EX_WIDTH = `UP(EX_BITS);
+
+    localparam SFU_BITS = `CLOG2(2);
+    localparam SFU_WIDTH = `UP(SFU_BITS);
+
+    localparam SFU_CSRS = 0;
+    localparam SFU_WCTL = 1;
+
+    localparam NUM_SFU_UNITS = (2);
+
+    ///////////////////////////////////////////////////////////////////////////
+
+    localparam INST_LUI =        7'b0110111;
+    localparam INST_AUIPC =      7'b0010111;
+    localparam INST_JAL =        7'b1101111;
+    localparam INST_JALR =       7'b1100111;
+    localparam INST_B =          7'b1100011; // branch instructions
+    localparam INST_L =          7'b0000011; // load instructions
+    localparam INST_S =          7'b0100011; // store instructions
+    localparam INST_I =          7'b0010011; // immediate instructions
+    localparam INST_R =          7'b0110011; // register instructions
+    localparam INST_V =          7'b1010111; // vector instructions
+    localparam INST_FENCE =      7'b0001111; // Fence instructions
+    localparam INST_AMO =        7'b0101111; // RVA atomic memory operations
+    localparam INST_SYS =        7'b1110011; // system instructions
+
+    // RV64I instruction specific opcodes (for any W instruction)
+    localparam INST_I_W =        7'b0011011; // W type immediate instructions
+    localparam INST_R_W =        7'b0111011; // W type register instructions
+
+    localparam INST_FL =         7'b0000111; // float load instruction
+    localparam INST_FS =         7'b0100111; // float store  instruction
+    localparam INST_FMADD =      7'b1000011;
+    localparam INST_FMSUB =      7'b1000111;
+    localparam INST_FNMSUB =     7'b1001011;
+    localparam INST_FNMADD =     7'b1001111;
+    localparam INST_FCI =        7'b1010011; // float common instructions
+
+    // Custom extension opcodes
+    localparam INST_EXT1 =       7'b0001011; // 0x0B
+    localparam INST_EXT2 =       7'b0101011; // 0x2B
+    localparam INST_EXT3 =       7'b1011011; // 0x5B
+    localparam INST_EXT4 =       7'b1111011; // 0x7B
+
+    // Opcode extensions
+    localparam INST_R_F7_MUL =   7'b0000001;
+    localparam INST_R_F7_ZICOND= 7'b0000111;
+
+    ///////////////////////////////////////////////////////////////////////////
+
+    localparam INST_FRM_RNE =    3'b000;  // round to nearest even
+    localparam INST_FRM_RTZ =    3'b001;  // round to zero
+    localparam INST_FRM_RDN =    3'b010;  // round to -inf
+    localparam INST_FRM_RUP =    3'b011;  // round to +inf
+    localparam INST_FRM_RMM =    3'b100;  // round to nearest max magnitude
+    localparam INST_FRM_DYN =    3'b111;  // dynamic mode
+    localparam INST_FRM_BITS =   3;
+
+    ///////////////////////////////////////////////////////////////////////////
+
+    localparam INST_OP_BITS =    4;
+    localparam INST_FMT_BITS =   2;
+
+    ///////////////////////////////////////////////////////////////////////////
+
+    localparam INST_ALU_ADD =    4'b0000;
+    //localparam INST_ALU_UNUSED=4'b0001;
+    localparam INST_ALU_LUI =    4'b0010;
+    localparam INST_ALU_AUIPC =  4'b0011;
+    localparam INST_ALU_SLTU =   4'b0100;
+    localparam INST_ALU_SLT =    4'b0101;
+    //localparam INST_ALU_UNUSED=4'b0110;
+    localparam INST_ALU_SUB =    4'b0111;
+    localparam INST_ALU_SRL =    4'b1000;
+    localparam INST_ALU_SRA =    4'b1001;
+    localparam INST_ALU_CZEQ =   4'b1010;
+    localparam INST_ALU_CZNE =   4'b1011;
+    localparam INST_ALU_AND =    4'b1100;
+    localparam INST_ALU_OR =     4'b1101;
+    localparam INST_ALU_XOR =    4'b1110;
+    localparam INST_ALU_SLL =    4'b1111;
+    localparam INST_ALU_BITS =   4;
+
+    localparam ALU_TYPE_BITS =   2;
+    localparam ALU_TYPE_ARITH =  0;
+    localparam ALU_TYPE_BRANCH = 1;
+    localparam ALU_TYPE_MULDIV = 2;
+    localparam ALU_TYPE_OTHER =  3;
+
+    function automatic logic [1:0] inst_alu_class(input logic [INST_ALU_BITS-1:0] op);
+        return op[3:2];
+    endfunction
+
+    function automatic logic inst_alu_signed(input logic [INST_ALU_BITS-1:0] op);
+        return op[0];
+    endfunction
+
+    function automatic logic inst_alu_is_sub(input logic [INST_ALU_BITS-1:0] op);
+        return op[1];
+    endfunction
+
+    function automatic logic inst_alu_is_czero(input logic [INST_ALU_BITS-1:0] op);
+        return (op[3:1] == 3'b101);
+    endfunction
+
+    ///////////////////////////////////////////////////////////////////////////
+
+    localparam INST_BR_BEQ =     4'b0000;
+    localparam INST_BR_BNE =     4'b0010;
+    localparam INST_BR_BLTU =    4'b0100;
+    localparam INST_BR_BGEU =    4'b0110;
+    localparam INST_BR_BLT =     4'b0101;
+    localparam INST_BR_BGE =     4'b0111;
+    localparam INST_BR_JAL =     4'b1000;
+    localparam INST_BR_JALR =    4'b1001;
+    localparam INST_BR_ECALL =   4'b1010;
+    localparam INST_BR_EBREAK =  4'b1011;
+    localparam INST_BR_URET =    4'b1100;
+    localparam INST_BR_SRET =    4'b1101;
+    localparam INST_BR_MRET =    4'b1110;
+    localparam INST_BR_OTHER =   4'b1111;
+    localparam INST_BR_BITS =    4;
+
+    function automatic logic [1:0] inst_br_class(input logic [INST_BR_BITS-1:0] op);
+        return {1'b0, ~op[3]};
+    endfunction
+
+    function automatic logic inst_br_is_neg(input logic [INST_BR_BITS-1:0] op);
+        return op[1];
+    endfunction
+
+    function automatic logic inst_br_is_less(input logic [INST_BR_BITS-1:0] op);
+        return op[2];
+    endfunction
+
+    function automatic logic inst_br_is_static(input logic [INST_BR_BITS-1:0] op);
+        return op[3];
+    endfunction
+
+    ///////////////////////////////////////////////////////////////////////////
+
+    // Shuffle & Vote Extension
+
+    localparam INST_VOTE_ALL =   2'b00;
+    localparam INST_VOTE_ANY =   2'b01;
+    localparam INST_VOTE_UNI =   2'b10;
+    localparam INST_VOTE_BAL =   2'b11;
+
+    localparam INST_SHFL_UP =    2'b00;
+    localparam INST_SHFL_DOWN =  2'b01;
+    localparam INST_SHFL_BFLY =  2'b10;
+    localparam INST_SHFL_IDX =   2'b11;
+
+    localparam INST_VOTE_BITS =  2;
+    localparam INST_SHFL_BITS =  2;
+
+    // Warp-Level Lane Gather Extension
+    localparam INST_WGATHER =    4'h8; // ALU_TYPE_OTHER, alu_op[3]=1
+
+    ///////////////////////////////////////////////////////////////////////////
+
+    localparam INST_M_MUL =      3'b000;
+    localparam INST_M_MULHU =    3'b001;
+    localparam INST_M_MULH =     3'b010;
+    localparam INST_M_MULHSU =   3'b011;
+    localparam INST_M_DIV =      3'b100;
+    localparam INST_M_DIVU =     3'b101;
+    localparam INST_M_REM =      3'b110;
+    localparam INST_M_REMU =     3'b111;
+    localparam INST_M_BITS =     3;
+
+    function automatic logic inst_m_signed(input logic [INST_M_BITS-1:0] op);
+        return (~op[0]);
+    endfunction
+
+    function automatic logic inst_m_is_mulx(input logic [INST_M_BITS-1:0] op);
+        return (~op[2]);
+    endfunction
+
+    function automatic logic inst_m_is_mulh(input logic [INST_M_BITS-1:0] op);
+        return (op[1:0] != 0);
+    endfunction
+
+    function automatic logic inst_m_signed_a(input logic [INST_M_BITS-1:0] op);
+        return (op[1:0] != 1);
+    endfunction
+
+    function automatic logic inst_m_is_rem(input logic [INST_M_BITS-1:0] op);
+        return op[1];
+    endfunction
+
+    ///////////////////////////////////////////////////////////////////////////
+
+    localparam LSU_FMT_B =       3'b000;
+    localparam LSU_FMT_H =       3'b001;
+    localparam LSU_FMT_W =       3'b010;
+    localparam LSU_FMT_D =       3'b011;
+    localparam LSU_FMT_BU =      3'b100;
+    localparam LSU_FMT_HU =      3'b101;
+    localparam LSU_FMT_WU =      3'b110;
+
+    localparam INST_LSU_LB =     4'b0000;
+    localparam INST_LSU_LH =     4'b0001;
+    localparam INST_LSU_LW =     4'b0010;
+    localparam INST_LSU_LD =     4'b0011; // new for RV64I LD
+    localparam INST_LSU_LBU =    4'b0100;
+    localparam INST_LSU_LHU =    4'b0101;
+    localparam INST_LSU_LWU =    4'b0110; // new for RV64I LWU
+    localparam INST_LSU_SB =     4'b1000;
+    localparam INST_LSU_SH =     4'b1001;
+    localparam INST_LSU_SW =     4'b1010;
+    localparam INST_LSU_SD =     4'b1011; // new for RV64I SD
+    localparam INST_LSU_FENCE_IO = 4'b1110; // a fence ordering only device (IO) accesses
+    localparam INST_LSU_FENCE =  4'b1111;
+    localparam INST_LSU_BITS =   4;
+
+    localparam INST_FENCE_BITS = 1;
+    localparam INST_FENCE_D =    1'h0;
+    localparam INST_FENCE_I =    1'h1;
+
+    function automatic logic [2:0] inst_lsu_fmt(input logic [INST_LSU_BITS-1:0] op);
+        return op[2:0];
+    endfunction
+
+    function automatic logic [1:0] inst_lsu_wsize(input logic [INST_LSU_BITS-1:0] op);
+        return op[1:0];
+    endfunction
+
+    function automatic logic inst_lsu_is_fence(input logic [INST_LSU_BITS-1:0] op);
+        return (op[3:1] == 3'b111);
+    endfunction
+
+    function automatic logic inst_lsu_is_fence_io(input logic [INST_LSU_BITS-1:0] op);
+        return (op == INST_LSU_FENCE_IO);
+    endfunction
+
+    ///////////////////////////////////////////////////////////////////////////
+
+    localparam INST_FPU_ADD =    4'b0000; // SUB=fmt[1]
+    localparam INST_FPU_MUL =    4'b0001;
+    localparam INST_FPU_MADD =   4'b0010; // SUB=fmt[1]
+    localparam INST_FPU_NMADD =  4'b0011; // SUB=fmt[1]
+    localparam INST_FPU_DIV =    4'b0100;
+    localparam INST_FPU_SQRT =   4'b0101;
+    localparam INST_FPU_F2I =    4'b1000; // fmt[0]: F32=0, F64=1, fmt[1]: I32=0, I64=1
+    localparam INST_FPU_F2U =    4'b1001; // fmt[0]: F32=0, F64=1, fmt[1]: I32=0, I64=1
+    localparam INST_FPU_I2F =    4'b1010; // fmt[0]: F32=0, F64=1, fmt[1]: I32=0, I64=1
+    localparam INST_FPU_U2F =    4'b1011; // fmt[0]: F32=0, F64=1, fmt[1]: I32=0, I64=1
+    localparam INST_FPU_CMP =    4'b1100; // frm: LE=0, LT=1, EQ=2
+    localparam INST_FPU_F2F =    4'b1101; // fmt[0]: F32=0, F64=1
+    localparam INST_FPU_MISC =   4'b1110; // frm: SGNJ=0, SGNJN=1, SGNJX=2, CLASS=3, MVXW=4, MVWX=5, FMIN=6, FMAX=7
+    localparam INST_FPU_F2H =    4'b1111;
+    localparam INST_FPU_BITS =   4;
+
+    function automatic logic inst_fpu_is_class(input logic [INST_FPU_BITS-1:0] op, input logic [INST_FRM_BITS-1:0] frm);
+        return (op == INST_FPU_MISC && frm == 3);
+    endfunction
+
+    function automatic logic inst_fpu_is_mvxw(input logic [INST_FPU_BITS-1:0] op, input logic [INST_FRM_BITS-1:0] frm);
+        return (op == INST_FPU_MISC && frm == 4);
+    endfunction
+
+    ///////////////////////////////////////////////////////////////////////////
+
+    localparam INST_SFU_TMC =    4'h0;
+    localparam INST_SFU_WSPAWN = 4'h1;
+    localparam INST_SFU_SPLIT =  4'h2;
+    localparam INST_SFU_JOIN =   4'h3;
+    localparam INST_SFU_BAR =    4'h4;
+    localparam INST_SFU_PRED =   4'h5;
+    localparam INST_SFU_CSRRW =  4'h6;
+    localparam INST_SFU_CSRRS =  4'h7;
+    localparam INST_SFU_CSRRC =  4'h8;
+`ifdef VX_CFG_EXT_DXA_ENABLE
+    localparam INST_SFU_DXA =    4'h9;
+`endif
+    localparam INST_SFU_WSYNC =  4'hA;
+`ifdef VX_CFG_EXT_TEX_ENABLE
+    localparam INST_SFU_TEX =    4'hB;
+`endif
+`ifdef VX_CFG_EXT_OM_ENABLE
+    localparam INST_SFU_OM =     4'hC;
+`endif
+`ifdef VX_CFG_EXT_RASTER_ENABLE
+    localparam INST_SFU_RASTER = 4'hD;
+`endif
+`ifdef EXT_GFX_ANY_ENABLE
+    localparam INST_SFU_RTUW =   4'hE;  // RTU hit window (GETW/GETWF) + trace ops
+`endif
+`ifdef VX_CFG_EXT_MUFU_ENABLE
+    localparam INST_SFU_MUFU =   4'hF;
+`endif
+    localparam INST_SFU_BITS =   4;
+
+    function automatic logic [3:0] inst_sfu_csr(input logic [2:0] funct3);
+        return (4'h6 + 4'(funct3[1:0]) - 4'h1);
+    endfunction
+
+    function automatic logic inst_sfu_is_wctl(input logic [INST_SFU_BITS-1:0] op);
+        return (op == INST_SFU_TMC)
+            || (op == INST_SFU_WSPAWN)
+            || (op == INST_SFU_SPLIT)
+            || (op == INST_SFU_JOIN)
+            || (op == INST_SFU_BAR)
+            || (op == INST_SFU_PRED)
+            || (op == INST_SFU_WSYNC);
+    endfunction
+
+    function automatic logic inst_sfu_is_csr(input logic [INST_SFU_BITS-1:0] op);
+        return (op >= 6 && op <= 8);
+    endfunction
+
+`ifdef VX_CFG_EXT_MUFU_ENABLE
+    localparam INST_MUFU_RCP =   3'h0;
+    localparam INST_MUFU_RSQRT = 3'h1;
+    localparam INST_MUFU_EX2 =   3'h2;
+    localparam INST_MUFU_LG2 =   3'h3;
+    localparam INST_MUFU_SINPI = 3'h4;
+    localparam INST_MUFU_COSPI = 3'h5;
+    localparam INST_MUFU_TANH =  3'h6;
+    localparam INST_MUFU_BITS =  3;
+`endif
+
+    /////////////////////////////// Issue parameters //////////////////////////
+
+    localparam ISSUE_ISW_BITS = `CLOG2(`VX_CFG_ISSUE_WIDTH);
+    localparam ISSUE_ISW_SIZEW = `CLOG2(`VX_CFG_ISSUE_WIDTH + 1);
+    localparam ISSUE_ISW_W = `UP(ISSUE_ISW_BITS);
+    localparam PER_ISSUE_WARPS = `VX_CFG_NUM_WARPS / `VX_CFG_ISSUE_WIDTH;
+    localparam ISSUE_WIS_BITS = `CLOG2(PER_ISSUE_WARPS);
+    localparam ISSUE_WIS_W = `UP(ISSUE_WIS_BITS);
+
+    // Machine-mode trap CSRs stored per warp in the scheduler: mstatus, mtvec, mepc, mcause, mtval.
+    localparam NUM_TRAP_CSRS = 5;
+
+    localparam DISPATCH_QSIZE = `VX_CFG_DISPATCH_QUEUE_SIZE;
+
+    localparam PER_OPC_WARPS = `CDIV(PER_ISSUE_WARPS, `VX_CFG_NUM_OPCS);
+    localparam PER_OPC_NW_BITS = `CLOG2(PER_OPC_WARPS);
+    localparam PER_OPC_NW_W = `UP(PER_OPC_NW_BITS);
+
+    function automatic logic [NW_WIDTH-1:0] wis_to_wid(
+        input logic [ISSUE_WIS_W-1:0] wis,
+        input logic [ISSUE_ISW_W-1:0] isw
+    );
+        if (ISSUE_WIS_BITS == 0) begin
+            wis_to_wid = NW_WIDTH'(isw);
+        end else if (ISSUE_ISW_BITS == 0) begin
+            wis_to_wid = NW_WIDTH'(wis);
+        end else begin
+            wis_to_wid = NW_WIDTH'({wis, isw});
+        end
+    endfunction
+
+    function automatic logic [ISSUE_ISW_W-1:0] wid_to_isw(
+        input logic [NW_WIDTH-1:0] wid
+    );
+        if (ISSUE_ISW_BITS != 0) begin
+            wid_to_isw = wid[ISSUE_ISW_W-1:0];
+        end else begin
+            wid_to_isw = 0;
+        end
+    endfunction
+
+    function automatic logic [ISSUE_WIS_W-1:0] wid_to_wis(
+        input logic [NW_WIDTH-1:0] wid
+    );
+        if (ISSUE_WIS_BITS != 0) begin
+            wid_to_wis = ISSUE_WIS_W'(wid >> ISSUE_ISW_BITS);
+        end else begin
+            wid_to_wis = 0;
+        end
+    endfunction
+
+    // Frontend slice f schedules and fetches the warps with wid mod FETCH_WIDTH == f,
+    // naming them by their local id wfs = wid / FETCH_WIDTH.
+    localparam FETCH_FSW_BITS  = `CLOG2(`VX_CFG_FETCH_WIDTH);
+    localparam FETCH_FSW_W     = `UP(FETCH_FSW_BITS);
+    localparam PER_FETCH_WARPS = `VX_CFG_NUM_WARPS / `VX_CFG_FETCH_WIDTH;
+    localparam FETCH_WFS_BITS  = `CLOG2(PER_FETCH_WARPS);
+    localparam FETCH_WFS_W     = `UP(FETCH_WFS_BITS);
+
+    function automatic logic [NW_WIDTH-1:0] wfs_to_wid(
+        input logic [FETCH_WFS_W-1:0] wfs,
+        input logic [FETCH_FSW_W-1:0] fsw
+    );
+        if (FETCH_WFS_BITS == 0) begin
+            wfs_to_wid = NW_WIDTH'(fsw);
+        end else if (FETCH_FSW_BITS == 0) begin
+            wfs_to_wid = NW_WIDTH'(wfs);
+        end else begin
+            wfs_to_wid = NW_WIDTH'({wfs, fsw});
+        end
+    endfunction
+
+    function automatic logic [FETCH_FSW_W-1:0] wid_to_fsw(
+        input logic [NW_WIDTH-1:0] wid
+    );
+        if (FETCH_FSW_BITS != 0) begin
+            wid_to_fsw = wid[FETCH_FSW_W-1:0];
+        end else begin
+            wid_to_fsw = 0;
+        end
+    endfunction
+
+    // FU block ports per frontend slice: a unit with B blocks serves warps with
+    // wid mod B == b, so B >= FETCH_WIDTH gives each frontend slice B / FETCH_WIDTH
+    // blocks and B < FETCH_WIDTH shares each block among FETCH_WIDTH / B slices.
+    localparam FETCH_ALU_PORTS = (`VX_CFG_NUM_ALU_BLOCKS > `VX_CFG_FETCH_WIDTH) ? (`VX_CFG_NUM_ALU_BLOCKS / `VX_CFG_FETCH_WIDTH) : 1;
+    localparam FETCH_SFU_PORTS = (`VX_CFG_NUM_SFU_BLOCKS > `VX_CFG_FETCH_WIDTH) ? (`VX_CFG_NUM_SFU_BLOCKS / `VX_CFG_FETCH_WIDTH) : 1;
+
+    function automatic logic [FETCH_WFS_W-1:0] wid_to_wfs(
+        input logic [NW_WIDTH-1:0] wid
+    );
+        if (FETCH_WFS_BITS != 0) begin
+            wid_to_wfs = FETCH_WFS_W'(wid >> FETCH_FSW_BITS);
+        end else begin
+            wid_to_wfs = 0;
+        end
+    endfunction
+
+    // A unit with B blocks serves, in block b, exactly the warps with wid mod B == b
+    // (lane dispatch maps issue slot {batch, block} and isw = wid mod ISSUE_WIDTH),
+    // so a block's warp state is indexed by the remaining high wid bits.
+    localparam SFU_BLOCK_BITS  = `CLOG2(`VX_CFG_NUM_SFU_BLOCKS);
+    localparam SFU_BLOCK_W     = `UP(SFU_BLOCK_BITS);
+    localparam SFU_BLOCK_WARPS = `VX_CFG_NUM_WARPS / `VX_CFG_NUM_SFU_BLOCKS;
+    localparam SFU_BLOCK_NW_BITS = `CLOG2(SFU_BLOCK_WARPS);
+    localparam SFU_BLOCK_NW_W  = `UP(SFU_BLOCK_NW_BITS);
+
+    function automatic logic [SFU_BLOCK_W-1:0] wid_to_sfu_block(
+        input logic [NW_WIDTH-1:0] wid
+    );
+        if (SFU_BLOCK_BITS != 0) begin
+            wid_to_sfu_block = wid[SFU_BLOCK_W-1:0];
+        end else begin
+            wid_to_sfu_block = 0;
+        end
+    endfunction
+
+    function automatic logic [SFU_BLOCK_NW_W-1:0] wid_to_sfu_local(
+        input logic [NW_WIDTH-1:0] wid
+    );
+        if (SFU_BLOCK_NW_BITS != 0) begin
+            wid_to_sfu_local = SFU_BLOCK_NW_W'(wid >> SFU_BLOCK_BITS);
+        end else begin
+            wid_to_sfu_local = 0;
+        end
+    endfunction
+
+    function automatic logic [NW_WIDTH-1:0] sfu_local_to_wid(
+        input logic [SFU_BLOCK_NW_W-1:0] lid,
+        input logic [SFU_BLOCK_W-1:0]    block
+    );
+        if (SFU_BLOCK_NW_BITS == 0) begin
+            sfu_local_to_wid = NW_WIDTH'(block);
+        end else if (SFU_BLOCK_BITS == 0) begin
+            sfu_local_to_wid = NW_WIDTH'(lid);
+        end else begin
+            sfu_local_to_wid = NW_WIDTH'({lid, block});
+        end
+    endfunction
+
+    // The core structure follows from the widths. When every execution unit has
+    // one block per issue slice, the back end is ISSUE_WIDTH backend slices
+    // (VX_backend_slice: issue, execute, commit); otherwise it is stage-sliced.
+    // When the fetch width matches too, each backend slice and its frontend slice
+    // form one compute slice (VX_compute_slice), with no frontend crossbar.
+    localparam BACKEND_SLICES = (`VX_CFG_NUM_ALU_BLOCKS == `VX_CFG_ISSUE_WIDTH)
+                             && (`VX_CFG_NUM_LSU_BLOCKS == `VX_CFG_ISSUE_WIDTH)
+                             && (`VX_CFG_NUM_SFU_BLOCKS == `VX_CFG_ISSUE_WIDTH)
+                             && (!`VX_CFG_EXT_F_ENABLED || (`VX_CFG_NUM_FPU_BLOCKS == `VX_CFG_ISSUE_WIDTH))
+                             && (!`VX_CFG_EXT_TCU_ENABLED || (`VX_CFG_NUM_TCU_BLOCKS == `VX_CFG_ISSUE_WIDTH));
+    localparam COMPUTE_SLICES = BACKEND_SLICES && (`VX_CFG_FETCH_WIDTH == `VX_CFG_ISSUE_WIDTH);
+    // A compute slice whose warp-control requests are arbitrated with other
+    // slices' retires its own warps when its exit request is granted. With a
+    // sole requester, the core retires them from its registered request.
+    localparam SLICE_RETIRE = COMPUTE_SLICES && (`VX_CFG_NUM_SFU_BLOCKS > 1);
+
+    ///////////////////////////// MATRIX FRAGMENTS ////////////////////////////
+
+    // A warp's matrix tile holds 8 words per lane for each operand and is
+    // computed in blocks of one word per lane; tile and block split their
+    // capacity over M and N, M taking the larger half of an odd power of two.
+    localparam MTX_NT           = `VX_CFG_NUM_THREADS;
+    localparam MTX_NR           = 8;
+
+    localparam MTX_TILE_CAP     = MTX_NT * MTX_NR;
+    localparam MTX_LG_TILE_CAP  = $clog2(MTX_TILE_CAP);
+    localparam MTX_TILE_EN      = MTX_LG_TILE_CAP / 2;
+    localparam MTX_TILE_EM      = MTX_LG_TILE_CAP - MTX_TILE_EN;
+    localparam MTX_TILE_M       = 1 << MTX_TILE_EM;
+    localparam MTX_TILE_N       = 1 << MTX_TILE_EN;
+    localparam MTX_TILE_K       = MTX_TILE_CAP / ((MTX_TILE_M > MTX_TILE_N) ? MTX_TILE_M : MTX_TILE_N);
+
+    localparam MTX_BLOCK_CAP    = MTX_NT;
+    localparam MTX_LG_BLOCK_CAP = $clog2(MTX_BLOCK_CAP);
+    localparam MTX_BLOCK_EN     = MTX_LG_BLOCK_CAP / 2;
+    localparam MTX_BLOCK_EM     = MTX_LG_BLOCK_CAP - MTX_BLOCK_EN;
+    localparam MTX_TC_M         = 1 << MTX_BLOCK_EM;
+    localparam MTX_TC_N         = 1 << MTX_BLOCK_EN;
+    localparam MTX_TC_K         = MTX_BLOCK_CAP / ((MTX_TC_M > MTX_TC_N) ? MTX_TC_M : MTX_TC_N);
+
+    localparam MTX_M_STEPS      = MTX_TILE_M / MTX_TC_M;
+    localparam MTX_N_STEPS      = MTX_TILE_N / MTX_TC_N;
+    localparam MTX_K_STEPS      = MTX_TILE_K / MTX_TC_K;
+    localparam MTX_B_SUB_BLOCKS = MTX_BLOCK_CAP / (MTX_TC_K * MTX_TC_N);
+    localparam MTX_NRB          = (MTX_TILE_N * MTX_TILE_K) / MTX_NT;
+    localparam MTX_SYM_SPARSE   = (MTX_BLOCK_EM == MTX_BLOCK_EN);
+
+    localparam MTX_LG_M         = $clog2(MTX_M_STEPS);
+    localparam MTX_LG_N         = $clog2(MTX_N_STEPS);
+    localparam MTX_LG_K         = $clog2(MTX_K_STEPS);
+    localparam MTX_LG_B_SB      = $clog2(MTX_B_SUB_BLOCKS);
+
+    // Matrix fragment load/store (vx_ldm/vx_stm) shapes: {ctx, role[1:0], trans, sparse}.
+    // Uop e moves fragment register fd + e between it and x[rs1 | grp] +
+    // (imm[11:5] | col): the element the fragment register layout puts there.
+    localparam MTX_LDM_A        = 5'b00000; // A, row-major
+    localparam MTX_LDM_A_SP     = 5'b00001; // sparse A, row-major
+    localparam MTX_LDM_B        = 5'b00110; // B, col-major
+    localparam MTX_LDM_B_SP     = 5'b00111; // symmetric sparse B, col-major
+    localparam MTX_LDM_C        = 5'b01000; // C, row-major
+    localparam MTX_LDM_WG_C     = 5'b11000; // warp-group C, row-major, one 8-register chunk
+
+    // Decode replaces the shape in imm[4:0] with its index, so the per-warp
+    // expander decodes 3 bits instead of 5, and marks an 8-register fragment
+    // in bytesel.
+    localparam MTX_LDM_IDX_A    = 3'd0;
+    localparam MTX_LDM_IDX_A_SP = 3'd1;
+    localparam MTX_LDM_IDX_B    = 3'd2;
+    localparam MTX_LDM_IDX_B_SP = 3'd3;
+    localparam MTX_LDM_IDX_C    = 3'd4;
+    localparam MTX_LDM_IDX_WG_C = 3'd5;
+
+    // Byte strides between the words a lane holds along a fragment row
+    localparam MTX_LDM_LG_CS_K  = $clog2(MTX_TC_K * 4);
+    localparam MTX_LDM_LG_CS_N  = $clog2(MTX_TC_N * 4);
+    localparam MTX_LDM_LG_K_SP  = (MTX_LG_K > 0) ? (MTX_LG_K - 1) : 0;
+    localparam MTX_LDM_COL_W    = MTX_LDM_LG_CS_K + 4;
+
+    typedef struct packed {
+        logic [1:0]           grp;
+        logic [MTX_LDM_COL_W-1:0] col;
+    } mtx_ldm_uop_t;
+
+    function automatic logic mtx_ldm_valid(input logic [4:0] shape);
+        case (shape)
+            MTX_LDM_A,
+            MTX_LDM_A_SP,
+            MTX_LDM_B,
+            MTX_LDM_C,
+            MTX_LDM_WG_C: return 1'b1;
+            MTX_LDM_B_SP: return 1'(MTX_SYM_SPARSE);
+            default:  return 1'b0;
+        endcase
+    endfunction
+
+    function automatic logic [4:0] mtx_ldm_code(input logic [4:0] shape);
+        case (shape)
+            MTX_LDM_A:    return 5'(MTX_LDM_IDX_A);
+            MTX_LDM_A_SP: return 5'(MTX_LDM_IDX_A_SP);
+            MTX_LDM_B:    return 5'(MTX_LDM_IDX_B);
+            MTX_LDM_B_SP: return 5'(MTX_LDM_IDX_B_SP);
+            MTX_LDM_C:    return 5'(MTX_LDM_IDX_C);
+            default:  return 5'(MTX_LDM_IDX_WG_C);
+        endcase
+    endfunction
+
+    function automatic int unsigned mtx_ldm_count(input logic [2:0] idx);
+        case (idx)
+            MTX_LDM_IDX_A_SP: return 4;
+            MTX_LDM_IDX_B,
+            MTX_LDM_IDX_B_SP: return MTX_NRB;
+            default:      return 8;
+        endcase
+    endfunction
+
+    function automatic logic mtx_ldm_is8(input logic [4:0] shape);
+        return (mtx_ldm_count(3'(mtx_ldm_code(shape))) == 8);
+    endfunction
+
+    // Register offsets of the A, B and C fragments' elements at MMA step (m, n, k),
+    // permuted so the three operands of a step never share a register bank.
+    //   one B sub-block:   A={m[0],~m[hi],k}, B={n^k,~k}, C={m[0],~m[hi],XNOR(m[hi],n)}
+    //   two B sub-blocks:  A={k[0],~m,m^k[hi]}, B={k[0],k[hi]^np,~np}, C={n[0],~m,n[hi]}
+    //   asymmetric sparse: B={n[hi],~(n[0]^k),~k}, C={n[hi],m,~(m^n[0])}
+    function automatic logic [2:0] mtx_ra_off(input logic [`UP(MTX_LG_M)-1:0] m,
+                                              input logic [`UP(MTX_LG_K)-1:0] k);
+        if (MTX_LG_B_SB == 0) begin
+            return 3'({m[0], ~m[`UP(MTX_LG_M)-1], k[0]});
+        end else begin
+            return 3'({k[0], ~m[0], m[0] ^ k[`UP(MTX_LG_K)-1]});
+        end
+    endfunction
+
+    function automatic logic [2:0] mtx_rb_off(input logic [`UP(MTX_LG_N)-1:0] n,
+                                              input logic [`UP(MTX_LG_K)-1:0] k);
+        if (MTX_LG_B_SB == 0) begin
+            return 3'({n[0] ^ k[0], ~k[0]});
+        end else begin
+            return 3'({k[0], k[`UP(MTX_LG_K)-1] ^ n[`UP(MTX_LG_N)-1], ~n[`UP(MTX_LG_N)-1]});
+        end
+    endfunction
+
+    function automatic logic [2:0] mtx_rc_off(input logic [`UP(MTX_LG_M)-1:0] m,
+                                              input logic [`UP(MTX_LG_N)-1:0] n);
+        if (MTX_LG_B_SB == 0) begin
+            return 3'({m[0], ~m[`UP(MTX_LG_M)-1], ~(m[`UP(MTX_LG_M)-1] ^ n[0])});
+        end else begin
+            return 3'({n[0], ~m[0], n[`UP(MTX_LG_N)-1]});
+        end
+    endfunction
+
+    function automatic logic [2:0] mtx_rb_off_sp(input logic [`UP(MTX_LG_N)-1:0] n,
+                                                 input logic [`UP(MTX_LG_K)-1:0] k);
+        return 3'({n[`UP(MTX_LG_N)-1], ~(n[0] ^ k[0]), ~k[0]});
+    endfunction
+
+    function automatic logic [2:0] mtx_rc_off_sp(input logic [`UP(MTX_LG_M)-1:0] m,
+                                                 input logic [`UP(MTX_LG_N)-1:0] n);
+        return 3'({n[`UP(MTX_LG_N)-1], m[0], ~(m[0] ^ n[0])});
+    endfunction
+
+    // Uop e moves register fd + e, so the counter feeds the register add
+    // directly; the shape maps e to the row group and column of the element
+    // that register holds, a few inverted and XORed bits of e that invert the
+    // permutations above. mtx_ldm_reg checks the inverse at elaboration.
+    function automatic mtx_ldm_uop_t mtx_ldm_uop(input logic [2:0] idx, input logic [2:0] e);
+        mtx_ldm_uop_t u;
+        logic [2:0] m, n, k;
+        u = '0;
+        m = '0;
+        n = '0;
+        k = '0;
+        case (idx)
+            MTX_LDM_IDX_A: begin
+                if (MTX_LG_B_SB == 0) begin
+                    m = {1'b0, ~e[1], e[2]};
+                    k = {2'b0, e[0]};
+                end else begin
+                    m = {2'b0, ~e[1]};
+                    k = {1'b0, e[0] ^ ~e[1], e[2]};
+                end
+                u.grp = 2'(m);
+                u.col = MTX_LDM_COL_W'(k) << MTX_LDM_LG_CS_K;
+            end
+            // registers in element order {m, k} over half the K steps
+            MTX_LDM_IDX_A_SP: begin
+                u.grp = 2'(e >> MTX_LDM_LG_K_SP);
+                u.col = MTX_LDM_COL_W'(e & 3'((1 << MTX_LDM_LG_K_SP) - 1)) << MTX_LDM_LG_CS_K;
+            end
+            // a col-major B row is one of its columns (a pair with two sub-blocks)
+            MTX_LDM_IDX_B: begin
+                if (MTX_LG_B_SB == 0) begin
+                    k = {2'b0, ~e[0]};
+                    n = {2'b0, e[1] ^ ~e[0]};
+                end else begin
+                    n = {2'b0, ~e[0]};
+                    k = {1'b0, e[1] ^ ~e[0], e[2]};
+                end
+                u.grp = 2'(n);
+                u.col = MTX_LDM_COL_W'(k) << MTX_LDM_LG_CS_K;
+            end
+            // symmetric sparse: one row per register
+            MTX_LDM_IDX_B_SP: begin
+                u.grp = 2'(e);
+            end
+            MTX_LDM_IDX_C: begin
+                if (MTX_LG_B_SB == 0) begin
+                    m = {1'b0, ~e[1], e[2]};
+                    n = {2'b0, e[0] ^ e[1]};
+                end else begin
+                    m = {2'b0, ~e[1]};
+                    n = {1'b0, e[0], e[2]};
+                end
+                u.grp = 2'(m);
+                u.col = MTX_LDM_COL_W'(n) << MTX_LDM_LG_CS_N;
+            end
+            // n-major registers {n, m}, two row groups
+            default: begin
+                u.grp = 2'(e[0]);
+                u.col = MTX_LDM_COL_W'(e >> 1) << MTX_LDM_LG_CS_N;
+            end
+        endcase
+        return u;
+    endfunction
+
+    // The register holding element (grp, col) of a fragment, through the forward
+    // permutations; -1 when (grp, col) is not an element of the fragment.
+    function automatic int mtx_ldm_reg(input logic [2:0] idx, input mtx_ldm_uop_t u);
+        int unsigned g, c, ck, cn;
+        g  = int'(u.grp);
+        c  = int'(u.col);
+        ck = c >> MTX_LDM_LG_CS_K;
+        cn = c >> MTX_LDM_LG_CS_N;
+        case (idx)
+            MTX_LDM_IDX_A: begin
+                if ((ck << MTX_LDM_LG_CS_K) != c || g >= MTX_M_STEPS || ck >= MTX_K_STEPS) begin
+                    return -1;
+                end
+                return int'(mtx_ra_off(`UP(MTX_LG_M)'(g), `UP(MTX_LG_K)'(ck)));
+            end
+            MTX_LDM_IDX_A_SP: begin
+                if ((ck << MTX_LDM_LG_CS_K) != c || g >= MTX_M_STEPS || ck >= (1 << MTX_LDM_LG_K_SP)) begin
+                    return -1;
+                end
+                return int'((g << MTX_LDM_LG_K_SP) | ck);
+            end
+            MTX_LDM_IDX_B: begin
+                if ((ck << MTX_LDM_LG_CS_K) != c || (g << MTX_LG_B_SB) >= `MAX(MTX_N_STEPS, 1 << MTX_LG_B_SB) || ck >= MTX_K_STEPS) begin
+                    return -1;
+                end
+                return int'(mtx_rb_off(`UP(MTX_LG_N)'(g << MTX_LG_B_SB), `UP(MTX_LG_K)'(ck)));
+            end
+            MTX_LDM_IDX_B_SP: begin
+                if (c != 0 || g >= MTX_NRB) begin
+                    return -1;
+                end
+                return int'(g);
+            end
+            MTX_LDM_IDX_C: begin
+                if ((cn << MTX_LDM_LG_CS_N) != c || g >= MTX_M_STEPS || cn >= MTX_N_STEPS) begin
+                    return -1;
+                end
+                return int'(mtx_rc_off(`UP(MTX_LG_M)'(g), `UP(MTX_LG_N)'(cn)));
+            end
+            default: begin
+                if ((cn << MTX_LDM_LG_CS_N) != c || g >= 2 || cn >= 4) begin
+                    return -1;
+                end
+                return int'((cn << 1) | g);
+            end
+        endcase
+    endfunction
+
+    /////////////////////////////// TENSOR UNIT ///////////////////////////////
+
+`ifdef VX_CFG_EXT_TCU_ENABLE
+    localparam INST_TCU_WMMA       = 4'h0;
+`ifdef VX_CFG_TCU_WGMMA_ENABLE
+    localparam INST_TCU_WGMMA      = 4'h1;
+`endif
+`ifdef VX_CFG_TCU_SPARSE_ENABLE
+    localparam INST_TCU_WMMA_SP    = 4'h3;
+`ifdef VX_CFG_TCU_WGMMA_ENABLE
+    localparam INST_TCU_WGMMA_SP   = 4'h4;
+`endif
+`endif
+`ifdef TCU_META_ENABLE
+    // TCU_LD — warp-level load into a metadata SRAM namespace.
+    localparam INST_TCU_LD         = 4'h5;
+`endif
+    localparam INST_TCU_BITS = 4;
+`endif
+
+    ///////////////////////////////////////////////////////////////////////////
+
+    typedef struct packed {
+        logic [`VX_CFG_NUM_THREADS-1:0] tmask;
+    } tmc_t;
+
+    typedef struct packed {
+        logic [`VX_CFG_NUM_WARPS-1:0]  wmask;
+        logic [PC_BITS-1:0]     pc;
+    } wspawn_t;
+
+    typedef struct packed {
+        logic                   is_dvg;
+        logic [`VX_CFG_NUM_THREADS-1:0] then_tmask;
+        logic [`VX_CFG_NUM_THREADS-1:0] else_tmask;
+        logic [PC_BITS-1:0]     next_pc;
+    } split_t;
+
+    typedef struct packed {
+        logic [`VX_CFG_NUM_THREADS-1:0] tmask;
+        logic [DV_STACK_SIZEW-1:0] stack_ptr;
+    } join_t;
+
+    typedef struct packed {
+        logic [NB_WIDTH-1:0]    id;
+        logic                   is_event;
+        logic                   is_global;
+        logic                   is_arrive;
+        logic                   is_sync;
+        logic                   phase;
+        logic [BAR_SIZE_W-1:0]  size_m1;
+    } barrier_t;
+
+    // Core-wide warp-control requests (barrier, wspawn, warp exit), one per
+    // SFU block, served by VX_warp_shared_unit.
+    localparam WSH_BAR    = 2'd0;
+    localparam WSH_WSPAWN = 2'd1;
+    localparam WSH_EXIT   = 2'd2;
+
+    typedef struct packed {
+        logic [1:0]             kind;
+        logic                   has_rsp;    // the requester waits for its completion
+        logic [NW_WIDTH-1:0]    wid;
+        barrier_t               bar;
+        logic [BAR_ADDR_W-1:0]  bar_addr;
+        wspawn_t                wspawn;
+        logic [`VX_CFG_MEM_ADDR_WIDTH-1:0] mscratch;  // spawning warp's, inherited by the spawned warps
+    } warp_shared_req_t;
+
+    typedef struct packed {
+        logic [NB_WIDTH-1:0] id;
+        logic [CORE_ID_WIDTH-1:0] size_m1;
+        logic [CORE_ID_WIDTH-1:0] core_id;
+    } gbar_req_t;
+
+    typedef struct packed {
+        logic [NB_WIDTH-1:0] id;
+    } gbar_rsp_t;
+
+    typedef struct packed {
+        logic [BAR_ADDR_W-1:0] addr;
+        logic                  is_done;
+    } txbar_t;
+
+    typedef struct packed {
+        logic                         rw;
+        logic [VX_DCR_ADDR_WIDTH-1:0] addr;
+        logic [VX_DCR_DATA_WIDTH-1:0] data;
+    } dcr_req_t;
+
+    typedef struct packed {
+        logic [VX_DCR_DATA_WIDTH-1:0] data;
+    } dcr_rsp_t;
+
+    // Per-quad fragment stamp, delivered inside the launch (see VX_raster_launch)
+    // and read back as the FRAG_* CSRs. Same layout as raster_stamp_t; spelled
+    // from the VX_types macros because VX_raster_pkg is compiled after this one.
+    localparam FRAG_STAMP_BITS = 2 * (`VX_RASTER_DIM_BITS - 1) + 4 + `VX_RASTER_PID_BITS;
+
+    // A pixel quad occupies four adjacent lanes, so its four lanes share ONE
+    // stamp: lane l holds slice (l & 3) of its quad's stamp and the CSR read
+    // gathers the four back. Storing a full copy per lane would cost 4x the
+    // width for the same bits.
+    localparam FRAG_QUAD_LANES = 4;
+    localparam FRAG_LANE_BITS  = FRAG_STAMP_BITS / FRAG_QUAD_LANES;
+
+    // A launch is EITHER a COMPUTE launch (a CTA grid: a GPGPU kernel, or a graphics
+    // frame's own geometry stages -- vertex shading, binning -- which run as compute
+    // grids too) or a FRAGMENT launch (a pixel wave a rasterizer pushes), selected by
+    // `kind`. The two carry different argument records, so kmu_req_t is a common
+    // envelope (every launch: PC/entry/param/ctx_id/lmem) plus a tagged `args` union of
+    // the two argument sets. A fragment is not a CTA -- no grid, no cluster, no
+    // thread-index stride -- so those fields live only in the compute variant and a
+    // fragment reuses their bits for its stamps.
+`ifdef VX_CFG_EXT_RASTER_ENABLE
+    // A fragment stamp: lane l holds slice (l & 3) of quad (l >> 2)'s stamp. Four
+    // lanes share a stamp, so this is a quarter of a naive per-lane copy.
+    localparam KMU_FRAG_BITS = `VX_CFG_NUM_THREADS * FRAG_LANE_BITS;
+    // A fragment carries its covered-quad count instead of borrowing a CTA's block_size;
+    // active lanes = count * FRAG_QUAD_LANES.
+    localparam FRAG_QUADS          = `VX_CFG_NUM_THREADS / FRAG_QUAD_LANES;
+    // UP() guards the degenerate NT < FRAG_QUAD_LANES case (FRAG_QUADS == 0), where
+    // CLOG2(1) is 0 and the count field would be a zero-width [-1:0] range.
+    localparam KMU_FRAG_COUNT_BITS = `UP(`CLOG2(FRAG_QUADS + 1));
+    localparam KMU_FRAG_PAYLOAD_BITS = KMU_FRAG_BITS + KMU_FRAG_COUNT_BITS;
+`else
+    localparam KMU_FRAG_BITS = 0;
+    localparam KMU_FRAG_PAYLOAD_BITS = 0;
+`endif
+
+    // Width of the compute variant's fields, computed arithmetically because the union
+    // envelope has to be sized before the type exists. The assertion under the typedef
+    // pins the two together: add or resize a field without updating this sum and
+    // elaboration fails, rather than the envelope silently mis-sizing.
+    localparam KMU_COMPUTE_BITS = 3*32                    // grid_dim
+                                + 3*32                    // block_idx
+                                + 3*(CTA_TID_WIDTH+1)     // block_dim
+                                + (CTA_TID_WIDTH+1)       // block_size
+                                + 3*CTA_TID_WIDTH         // warp_step
+                                + (NW_WIDTH+1)            // cluster_size
+                                + 1;                      // is_first_of_cluster
+
+    // The envelope takes whichever variant is wider. Compute dominates up to NT=16;
+    // the fragment's per-thread stamps grow with NT and overtake it by NT=32. The
+    // trailing +1 keeps both paddings non-zero: a zero-width packed field is illegal,
+    // and without it whichever variant is the wider one would have exactly zero.
+    localparam KMU_ARGS_BITS = `MAX(KMU_COMPUTE_BITS, KMU_FRAG_PAYLOAD_BITS) + 1;
+
+    // Compute arguments: the full CTA grid descriptor (a GPGPU kernel or a graphics
+    // geometry stage).
+    typedef struct packed {
+        logic [KMU_ARGS_BITS-KMU_COMPUTE_BITS-1:0] __padding;
+        logic [2:0][31:0]              grid_dim;
+        logic [2:0][31:0]              block_idx;
+        logic [2:0][CTA_TID_WIDTH:0]   block_dim;
+        logic [CTA_TID_WIDTH:0]        block_size;
+        logic [2:0][CTA_TID_WIDTH-1:0] warp_step;
+        logic [NW_WIDTH:0]             cluster_size;
+        logic                          is_first_of_cluster;
+    } kmu_compute_args_t;
+    `PACKAGE_ASSERT($bits(kmu_compute_args_t) == KMU_ARGS_BITS)
+
+`ifdef VX_CFG_EXT_RASTER_ENABLE
+    // Fragment arguments: the wave's stamps and its active-lane count. Self-describing --
+    // a fragment does not borrow a CTA's block_size.
+    typedef struct packed {
+        logic [KMU_ARGS_BITS-KMU_FRAG_PAYLOAD_BITS-1:0]     __padding;
+        logic [`VX_CFG_NUM_THREADS-1:0][FRAG_LANE_BITS-1:0] stamps;
+        logic [KMU_FRAG_COUNT_BITS-1:0]                     count;     // valid quads
+    } kmu_fragment_args_t;
+    `PACKAGE_ASSERT($bits(kmu_fragment_args_t) == KMU_ARGS_BITS)
+`endif
+
+    typedef union packed {
+        kmu_compute_args_t  compute;
+    `ifdef VX_CFG_EXT_RASTER_ENABLE
+        kmu_fragment_args_t fragment;
+    `endif
+    } kmu_args_t;
+
+    typedef struct packed {
+        logic                              kind;   // KMU_KIND_* -- the args discriminant
+        logic [PC_BITS-1:0]                PC;
+        logic [PC_BITS-1:0]                entry;
+        logic [`VX_CFG_MEM_ADDR_WIDTH-1:0] param;
+        logic [7:0]                        ctx_id;
+        logic [`VX_CFG_LMEM_LOG_SIZE:0]    aligned_lmem_size;
+        kmu_args_t                         args;   // .compute | .fragment
+    } kmu_req_t;
+
+    // ── KMU launch messages ──────────────────────────────────────────────
+    // Every beat is a self-contained kmu_req_t -- a fragment carries its stamps in
+    // the header, so nothing on this bus has a follow-on payload. A COMPUTE message
+    // still spans one beat per cluster member (see VX_kmu_bus_if); `eop` delimits
+    // it, not the beat count.
+    localparam KMU_DATAW = $bits(kmu_req_t);
+
+    localparam KMU_KIND_COMPUTE  = 1'b0;   // a cluster; its first member picks any ready core
+    localparam KMU_KIND_FRAGMENT = 1'b1;   // one wave, routed by `dest`
+    localparam KMU_KIND_BITS     = 1;
+
+    // Placement hint: the global index of the core a fragment launch must land
+    // on. Fragment work is bin->core affine (that is what makes same-pixel blend
+    // order safe), so a fragment message cannot be load-balanced like a compute
+    // CTA. Each fan-out level picks its output as (dest / DIV) % NUM_OUTPUTS,
+    // where DIV is the number of cores below each of its outputs: core-in-socket,
+    // then socket-in-cluster, then cluster (see KMU_DEST_DIV_*).
+    // Device-wide, so the hint can name any core: VX_CFG_NUM_CORES is per-cluster.
+    // `UP` so a single-core build still has a 1-bit (unused) hint rather than a
+    // zero-width vector.
+    localparam KMU_DEST_W = `UP(`CLOG2(`VX_CFG_NUM_CLUSTERS * `VX_CFG_NUM_CORES));
+
+    localparam KMU_DEST_DIV_SOCKET  = 1;
+    localparam KMU_DEST_DIV_CLUSTER = `VX_CFG_SOCKET_SIZE;
+    localparam KMU_DEST_DIV_DEVICE  = KMU_DEST_DIV_CLUSTER * NUM_SOCKETS;
+
+    typedef struct packed {
+        logic [NCTA_WIDTH-1:0] cta_id;
+        logic [NW_WIDTH-1:0] cta_rank;
+        logic [NW_WIDTH:0] cta_size;
+        logic [2:0][31:0] block_idx;
+        logic [2:0][CTA_TID_WIDTH:0] block_dim;
+        logic [2:0][31:0] grid_dim;
+        logic [PC_BITS-1:0] entry;
+        logic [`VX_CFG_MEM_ADDR_WIDTH-1:0] param;
+        logic [`VX_CFG_MEM_ADDR_WIDTH-1:0] lmem_addr;
+        logic [31:0] cluster_size;
+    } cta_csrs_t;
+
+    typedef struct packed {
+        logic [NW_WIDTH:0]              cta_size;
+        logic [2:0][31:0]               block_idx;
+        logic [2:0][CTA_TID_WIDTH:0]    block_dim;
+        logic [2:0][31:0]               grid_dim;
+        logic [PC_BITS-1:0]             entry;
+        logic [`VX_CFG_MEM_ADDR_WIDTH-1:0] param;
+        logic [`VX_CFG_MEM_ADDR_WIDTH-1:0] lmem_addr;
+        logic [31:0]                    cluster_size;
+    } cta_ctx_t;
+
+    // ── the per-lane launch record ─────────────────────────────────────────
+    // A warp is launched EITHER as a CTA warp (compute: the lane carries its
+    // expanded {x,y,z} thread index, read as the CTA_THREAD_ID_* CSRs) OR as a
+    // fragment warp (raster push: the lane carries one slice of its quad's
+    // stamp, read as the FRAG_* CSRs). The two are alternatives, not companions:
+    //
+    //   - a raster-pushed fragment warp is not a CTA. It has no block_dim, so a
+    //     thread index is not merely unused but undefined -- exactly as a real
+    //     GPU's fragment shader has gl_FragCoord and no threadIdx;
+    //   - a compute warp never reads FRAG_*.
+    //
+    // So they are one resource, and the lane payload is their OVERLAY, not their
+    // concatenation. This RAM is only 32 entries deep, so it is entirely
+    // width-bound in BRAM and the lane width is what costs area.
+    localparam CTA_TID_LANE_BITS = 3 * CTA_TID_WIDTH;
+`ifdef VX_CFG_EXT_RASTER_ENABLE
+    localparam LANE_LAUNCH_BITS = (FRAG_LANE_BITS > CTA_TID_LANE_BITS)
+                                ? FRAG_LANE_BITS : CTA_TID_LANE_BITS;
+`else
+    localparam LANE_LAUNCH_BITS = CTA_TID_LANE_BITS;
+`endif
+
+    // The per-lane record, holding whichever view the warp's launch kind selected
+    // (`is_frag_warp`, riding the pipeline): a compute warp's expanded thread index
+    // (CTA_THREAD_ID_* CSRs, low CTA_TID_LANE_BITS) or a fragment warp's stamp
+    // slice (FRAG_* CSRs, low FRAG_LANE_BITS). Both views sit in the low bits and
+    // the narrower one leaves the high bits unused. A packed union cannot express
+    // the overlay -- its members must be equal-width, and either view may be the
+    // wider one depending on NW/NT vs the raster dimensions -- so the record is
+    // the raw vector and each accessor takes its own slice.
+    typedef logic [LANE_LAUNCH_BITS-1:0] cta_lane_t;
+
+    typedef struct packed {
+        logic [NW_WIDTH-1:0]                     cta_rank;
+        cta_lane_t [`VX_CFG_NUM_THREADS-1:0]     lane_launch;
+    } cta_warp_t;
+
+    // CTA dispatcher state broadcast to the CTA-CSR stores that serve CSR reads:
+    // the per-CTA context, shared by every launch lane.
+    typedef struct packed {
+        logic                   ctx_write;
+        logic [NCTA_WIDTH-1:0]  ctx_waddr;
+        cta_ctx_t               ctx_wdata;
+    } cta_bcast_t;
+
+    // One launch lane's per-warp state: the warp's rank/lane record and CTA id.
+    typedef struct packed {
+        logic                   warp_write;
+        logic [NW_WIDTH-1:0]    warp_waddr;
+        cta_warp_t              warp_wdata;
+        logic                   id_write;
+        logic [NW_WIDTH-1:0]    id_wid;
+        logic [NCTA_WIDTH-1:0]  id_cta;
+    } cta_lane_bcast_t;
+
+    // Scheduler traffic between an FU block and the frontend slice owning the warp,
+    // addressed by core-wide wid.
+
+    // ALU branch resolution
+    typedef struct packed {
+        logic                   valid;
+        logic [NW_WIDTH-1:0]    wid;
+        logic                   taken;
+        logic [PC_BITS-1:0]     dest;
+        logic                   is_trap;
+        logic                   is_mret;
+        logic [3:0]             trap_cause;
+    } sched_branch_t;
+
+    // SFU warp control
+    typedef struct packed {
+        logic                   tmc_valid;
+        logic                   split_valid;
+        logic                   sjoin_valid;
+        logic                   wsync_valid;
+        logic [NW_WIDTH-1:0]    wid;
+        tmc_t                   tmc;
+        split_t                 split;
+        join_t                  sjoin;
+    } sched_wctl_t;
+
+    // SFU CSR writes to per-warp state
+    typedef struct packed {
+        logic                   valid;
+        logic [NW_WIDTH-1:0]    wid;
+        logic [`VX_CFG_MEM_ADDR_WIDTH-1:0] data;
+        logic [NUM_TRAP_CSRS-1:0] trap_valid;
+        logic [`VX_CFG_XLEN-1:0] trap_data;
+    } sched_csr_wr_t;
+
+    // SFU CSR reads of per-warp state, selected by the read wid and CTA id
+    typedef struct packed {
+        logic [`VX_CFG_NUM_THREADS-1:0] thread_mask;
+        logic [`VX_CFG_MEM_ADDR_WIDTH-1:0] mscratch;
+        logic [`VX_CFG_XLEN-1:0] mstatus;
+        logic [`VX_CFG_XLEN-1:0] mtvec;
+        logic [`VX_CFG_XLEN-1:0] mepc;
+        logic [`VX_CFG_XLEN-1:0] mcause;
+        logic [`VX_CFG_XLEN-1:0] mtval;
+        logic [NW_WIDTH-1:0]    cta_rank;
+        cta_lane_t [`VX_CFG_NUM_THREADS-1:0] cta_lane;
+    } sched_csr_rd_t;
+
+    //////////////////////// instruction arguments ////////////////////////////
+
+    // tcu_args_t at 27 bits = 1+1+1+2+5+5+4+4+4. Sparse variants are distinct opcodes.
+    localparam INST_ARGS_BITS = 3 + ALU_TYPE_BITS + 20 + 2;
+
+    // imm_hi: imm20 is bits [31:12] of the immediate (LUI, AUIPC).
+    // imm_x2: imm20 counts halfwords (JAL, conditional branches).
+    typedef struct packed {
+        logic imm_hi;
+        logic imm_x2;
+        logic use_PC;
+        logic use_imm;
+        logic is_w;
+        logic [ALU_TYPE_BITS-1:0] xtype;
+        logic [19:0] imm20;
+    } alu_args_t;
+    `PACKAGE_ASSERT($bits(alu_args_t) == INST_ARGS_BITS)
+
+    // Branch instructions (JAL/JALR/B/SYS) execute on the ALU pipeline.
+    typedef struct packed {
+        logic imm_hi;
+        logic imm_x2;
+        logic use_PC;
+        logic use_imm;
+        logic is_rvc;
+        logic [ALU_TYPE_BITS-1:0] xtype;
+        logic [19:0] imm20;
+    } br_args_t;
+    `PACKAGE_ASSERT($bits(br_args_t) == $bits(alu_args_t))
+    `PACKAGE_ASSERT($bits(br_args_t) == INST_ARGS_BITS)
+
+    typedef struct packed {
+        logic [(INST_ARGS_BITS-INST_FRM_BITS-INST_FMT_BITS)-1:0] __padding;
+        logic [INST_FRM_BITS-1:0] frm;
+        logic [INST_FMT_BITS-1:0] fmt;
+    } fpu_args_t;
+    `PACKAGE_ASSERT($bits(fpu_args_t) == INST_ARGS_BITS)
+
+    // lsu_args_t carries AMO sideband when EXT_A_ENABLE.
+    // amo_valid / amo_op are inspected only when amo_valid==1; for plain
+    // loads/stores they're zero. aq/rl order the AMO with the hart's other
+    // accesses (fence uops around it); on a memory fence they say what it
+    // orders: aq = later reads see others' writes (acquire: invalidate),
+    // rl = earlier writes are visible (release: drain). amo_unsigned
+    // distinguishes the U-variants of MIN/MAX.
+    // export_mask marks a vx_om_export (OM fragment export) and says which
+    // words of the aperture record the shader is writing:
+    //   bit 0 = colour (record + 0), bit 1 = depth (record + 4)
+    // A fragment shader may emit colour only (the common case -- early-Z owns the
+    // depth test AND the depth write), depth only (z-prepass / shadow map, no
+    // colour target at all), or both (gl_FragDepth). So the record is 1 or 2
+    // words, and VX_gfx_uops emits one uop per set bit.
+    // Zero = not an export. Read ONLY by VX_gfx_uops; the LSU never sees it set
+    // (the expander clears it), so the LSU stays a general-purpose unit.
+    // Spends two of the struct's spare padding bits -- INST_ARGS_BITS is
+    // unchanged (the PACKAGE_ASSERT below proves it).
+    typedef struct packed {
+        logic [(INST_ARGS_BITS-1-1-12-2-1-1-$bits(amo_op_e)-2-2)-1:0] __padding;
+        logic [1:0]                 export_mask;
+        logic                       amo_valid;
+        logic                       amo_unsigned;
+        amo_op_e                    amo_op;
+        logic                       amo_aq;
+        logic                       amo_rl;
+        logic [1:0]                 pack;
+        logic                       is_store;
+        logic                       is_float;
+        logic [11:0]                offset;
+    } lsu_args_t;
+    `PACKAGE_ASSERT($bits(lsu_args_t) == INST_ARGS_BITS)
+
+    typedef struct packed {
+        logic [(INST_ARGS_BITS-1-`VX_CSR_ADDR_BITS-5)-1:0] __padding;
+        logic use_imm;
+        logic [`VX_CSR_ADDR_BITS-1:0] addr;
+        logic [4:0] imm5;
+    } csr_args_t;
+    `PACKAGE_ASSERT($bits(csr_args_t) == INST_ARGS_BITS)
+
+    typedef struct packed {
+        logic [(INST_ARGS_BITS-3)-1:0] __padding;
+        logic is_cond_neg;
+        logic is_sync_bar;
+        logic is_bar_arrive;
+    } wctl_args_t;
+    `PACKAGE_ASSERT($bits(wctl_args_t) == INST_ARGS_BITS)
+
+`ifdef VX_CFG_EXT_DXA_ENABLE
+    typedef struct packed {
+        logic [INST_ARGS_BITS-1:0] __padding;
+    } dxa_args_t;
+    `PACKAGE_ASSERT($bits(dxa_args_t) == INST_ARGS_BITS)
+`endif
+
+`ifdef VX_CFG_EXT_TCU_ENABLE
+    typedef struct packed {
+        logic is_last_uop;    // WGMMA: set on last sub-uop of an expansion
+        logic is_first_uop;   // WGMMA: set on first sub-uop of an expansion
+        logic a_from_smem;    // 0=register, 1=shared memory (B is always smem)
+        logic [1:0] cd_nregs; // 0=8, 1=16, 2=32 C/D registers
+        logic [4:0] fmt_d;
+        logic [4:0] fmt_s;
+        logic [3:0] step_k;
+        logic [3:0] step_n;
+        logic [3:0] step_m;
+    } tcu_args_t;
+    `PACKAGE_ASSERT($bits(tcu_args_t) == INST_ARGS_BITS)
+`endif
+
+`ifdef VX_CFG_EXT_MUFU_ENABLE
+    typedef struct packed {
+        logic [INST_ARGS_BITS-INST_MUFU_BITS-1:0] __padding;
+        logic [INST_MUFU_BITS-1:0]                fn;
+    } mufu_args_t;
+    `PACKAGE_ASSERT($bits(mufu_args_t) == INST_ARGS_BITS)
+`endif
+
+`ifdef VX_CFG_EXT_TEX_ENABLE
+    // Texture sample op args (vx_tex, CUSTOM1 funct3=5, R4-type): u/v/lod ride
+    // rs1/rs2/rs3, the texel lands in rd, and `stage` (funct2) selects the
+    // sampler/image state. That is the whole op — TEX does not touch the graphics
+    // window, so there is no slot base and no writeback slot to encode.
+    // TEX stage-select width — used here in the core op-args encoding, so it is
+    // owned by the core package (not VX_tex_pkg, which the core cannot import).
+    localparam TEX_STAGE_BITS = `CLOG2(`VX_TEX_STAGE_COUNT);
+    typedef struct packed {
+        logic [INST_ARGS_BITS-TEX_STAGE_BITS-1:0] __padding;
+        logic [TEX_STAGE_BITS-1:0]                stage;
+    } tex_args_t;
+    `PACKAGE_ASSERT($bits(tex_args_t) == INST_ARGS_BITS)
+`endif
+
+`ifdef VX_CFG_EXT_OM_ENABLE
+    typedef struct packed {
+        logic [INST_ARGS_BITS-1:0] __padding;
+    } om_args_t;
+    `PACKAGE_ASSERT($bits(om_args_t) == INST_ARGS_BITS)
+`endif
+
+`ifdef VX_CFG_EXT_RASTER_ENABLE
+    typedef struct packed {
+        logic [INST_ARGS_BITS-1:0] __padding;
+    } raster_args_t;
+    `PACKAGE_ASSERT($bits(raster_args_t) == INST_ARGS_BITS)
+`endif
+
+`ifdef EXT_GFX_ANY_ENABLE
+    // Graphics-window op args (op_args.rtuw). `op` is the window op selector
+    // (VX_rtu_pkg RTUW_OP_*). `slot` is the start regfile slot (get/
+    // getwf/getw) or the per-uop target slot stamped by the macro-op expander
+    // (trace). `count` is the GETWF/GETW window length. `uop` carries the
+    // per-uop role/index filled by the sequencer's VX_gfx_uops expander (0 for
+    // non-macro ops). Literal widths here avoid a VX_rtu_pkg dependency.
+    typedef struct packed {
+        logic [INST_ARGS_BITS-16-1:0] __padding;
+        logic [2:0]                  uop;
+        logic [3:0]                  count;
+        logic [4:0]                  slot;
+        logic [3:0]                  op;       // RTUW_OP_BITS (VX_rtu_pkg) = 4
+    } rtuw_args_t;
+    `PACKAGE_ASSERT($bits(rtuw_args_t) == INST_ARGS_BITS)
+`endif
+
+    typedef union packed {
+        alu_args_t  alu;
+        br_args_t   br;
+        fpu_args_t  fpu;
+        lsu_args_t  lsu;
+        csr_args_t  csr;
+        wctl_args_t wctl;
+    `ifdef VX_CFG_EXT_DXA_ENABLE
+        dxa_args_t  dxa;
+    `endif
+    `ifdef VX_CFG_EXT_TCU_ENABLE
+        tcu_args_t  tcu;
+    `endif
+    `ifdef VX_CFG_EXT_MUFU_ENABLE
+        mufu_args_t mufu;
+    `endif
+    `ifdef VX_CFG_EXT_TEX_ENABLE
+        tex_args_t  tex;
+    `endif
+    `ifdef VX_CFG_EXT_OM_ENABLE
+        om_args_t   om;
+    `endif
+    `ifdef VX_CFG_EXT_RASTER_ENABLE
+        raster_args_t raster;
+    `endif
+    `ifdef EXT_GFX_ANY_ENABLE
+        rtuw_args_t rtuw;
+    `endif
+    } op_args_t;
+    `PACKAGE_ASSERT($bits(op_args_t) == INST_ARGS_BITS)
+
+    //////////////////////////// Pipeline Data Types //////////////////////////
+
+    typedef struct packed {
+        logic [UUID_WIDTH-1:0]  uuid;
+        logic [NW_WIDTH-1:0]    wid;
+        logic [NCTA_WIDTH-1:0]  cta_id;
+        logic [`VX_CFG_NUM_THREADS-1:0] tmask;
+        logic [PC_BITS-1:0]     PC;
+        logic [31:0]            instr;
+    `ifdef VX_CFG_EXT_C_ENABLE
+        logic                   is_rvc;
+    `endif
+    } fetch_t;
+
+    typedef struct packed {
+        logic [UUID_WIDTH-1:0]      uuid;
+        logic [NW_WIDTH-1:0]        wid;
+        logic [NCTA_WIDTH-1:0]      cta_id;
+        logic [`VX_CFG_NUM_THREADS-1:0]    tmask;
+        logic [PC_BITS-1:0]         PC;
+        logic [EX_BITS-1:0]         ex_type;
+        logic [INST_OP_BITS-1:0]    op_type;
+        op_args_t                   op_args;
+        logic                       wb;
+        logic [NUM_XREGS-1:0]       rd_xregs;
+        logic [NUM_XREGS-1:0]       wr_xregs;
+        logic [NUM_SRC_OPDS-1:0]    used_rs;
+        logic [NUM_REGS_BITS-1:0]   rd;
+        logic [BYTESEL_BITS-1:0]    bytesel;
+        logic [NUM_REGS_BITS-1:0]   rs1;
+        logic [NUM_REGS_BITS-1:0]   rs2;
+        logic [NUM_REGS_BITS-1:0]   rs3;
+    } decode_t;
+
+    typedef struct packed {
+        logic [UUID_WIDTH-1:0]      uuid;
+        logic [NW_WIDTH-1:0]        wid;
+        logic [NCTA_WIDTH-1:0]      cta_id;
+        logic [`VX_CFG_NUM_THREADS-1:0]    tmask;
+        logic [PC_BITS-1:0]         PC;
+        logic [EX_BITS-1:0]         ex_type;
+        logic [INST_OP_BITS-1:0]    op_type;
+        op_args_t                   op_args;
+        logic                       wb;
+        logic [NUM_XREGS-1:0]       rd_xregs;
+        logic [NUM_XREGS-1:0]       wr_xregs;
+        logic [NUM_SRC_OPDS-1:0]    used_rs;
+        logic [NUM_REGS_BITS-1:0]   rd;
+        logic [BYTESEL_BITS-1:0]    bytesel;
+        logic [NUM_REGS_BITS-1:0]   rs1;
+        logic [NUM_REGS_BITS-1:0]   rs2;
+        logic [NUM_REGS_BITS-1:0]   rs3;
+        logic                       fu_lock;
+        logic                       fu_unlock;
+    `ifdef VX_CFG_EXT_LDST_WIDE_ENABLE
+        // hand the next issue cycle to another ready warp
+        logic                       issue_yield;
+    `endif
+    } ibuffer_t;
+
+    typedef struct packed {
+        logic [UUID_WIDTH-1:0]      uuid;
+        logic [ISSUE_WIS_W-1:0]     wis;
+        logic [NCTA_WIDTH-1:0]      cta_id;
+        logic [`VX_CFG_NUM_THREADS-1:0]    tmask;
+        logic [PC_BITS-1:0]         PC;
+        logic [EX_BITS-1:0]         ex_type;
+        logic [INST_OP_BITS-1:0]    op_type;
+        op_args_t                   op_args;
+        logic                       wb;
+        logic [NUM_XREGS-1:0]       wr_xregs;
+        logic [NUM_SRC_OPDS-1:0]    used_rs;
+        logic [NUM_REGS_BITS-1:0]   rd;
+        logic [BYTESEL_BITS-1:0]    bytesel;
+        logic [NUM_REGS_BITS-1:0]   rs1;
+        logic [NUM_REGS_BITS-1:0]   rs2;
+        logic [NUM_REGS_BITS-1:0]   rs3;
+    } scoreboard_t;
+
+    typedef struct packed {
+        logic [UUID_WIDTH-1:0]              uuid;
+        logic [ISSUE_WIS_W-1:0]             wis;
+        logic [NCTA_WIDTH-1:0]              cta_id;
+        logic [SIMD_IDX_W-1:0]              sid;
+        logic [`VX_CFG_SIMD_WIDTH-1:0]             tmask;
+        logic [PC_BITS-1:0]                 PC;
+        logic [EX_BITS-1:0]                 ex_type;
+        logic [INST_OP_BITS-1:0]            op_type;
+        op_args_t                           op_args;
+        logic                               wb;
+        logic [NUM_XREGS-1:0]               wr_xregs;
+        logic [NUM_REGS_BITS-1:0]           rd;
+        logic [BYTESEL_BITS-1:0]            bytesel;
+        logic [`VX_CFG_SIMD_WIDTH-1:0][`VX_CFG_XLEN-1:0]  rs1_data;
+        logic [`VX_CFG_SIMD_WIDTH-1:0][`VX_CFG_XLEN-1:0]  rs2_data;
+        logic [`VX_CFG_SIMD_WIDTH-1:0][`VX_CFG_XLEN-1:0]  rs3_data;
+        logic                               sop;
+        logic                               eop;
+    } operands_t;
+
+    // INVARIANT: do not reorder fields without updating VX_dispatch and VX_lane_dispatch.
+    typedef struct packed {
+        logic [UUID_WIDTH-1:0]              uuid;
+        logic [ISSUE_WIS_W-1:0]             wis;
+        logic [NCTA_WIDTH-1:0]              cta_id;
+        logic [SIMD_IDX_W-1:0]              sid;
+        logic [`VX_CFG_SIMD_WIDTH-1:0]             tmask;
+        logic [PC_BITS-1:0]                 PC;
+        logic                               wb;
+        logic [NUM_XREGS-1:0]               wr_xregs;
+        logic [NUM_REGS_BITS-1:0]           rd;
+        logic [BYTESEL_BITS-1:0]            bytesel;
+        logic [INST_OP_BITS-1:0]            op_type;
+        op_args_t                           op_args;
+        logic [`VX_CFG_SIMD_WIDTH-1:0][`VX_CFG_XLEN-1:0]  rs1_data;
+        logic [`VX_CFG_SIMD_WIDTH-1:0][`VX_CFG_XLEN-1:0]  rs2_data;
+        logic [`VX_CFG_SIMD_WIDTH-1:0][`VX_CFG_XLEN-1:0]  rs3_data;
+        logic                               sop;
+        logic                               eop;
+    } dispatch_t;
+
+    typedef struct packed {
+        logic [UUID_WIDTH-1:0]              uuid;
+        logic [NW_WIDTH-1:0]                wid;
+        logic [NCTA_WIDTH-1:0]              cta_id;
+        logic [SIMD_IDX_W-1:0]              sid;
+        logic [`VX_CFG_SIMD_WIDTH-1:0]             tmask;
+        logic [PC_BITS-1:0]                 PC;
+        logic                               wb;
+        logic [NUM_XREGS-1:0]               wr_xregs;
+        logic [NUM_REGS_BITS-1:0]           rd;
+        logic [BYTESEL_BITS-1:0]            bytesel;
+        logic [`VX_CFG_SIMD_WIDTH-1:0][`VX_CFG_XLEN-1:0]  data;
+        logic                               sop;
+        logic                               eop;
+    } commit_t;
+
+    typedef struct packed {
+        logic [UUID_WIDTH-1:0]              uuid;
+        logic [ISSUE_WIS_W-1:0]             wis;
+        logic [PER_ISSUE_WARPS-1:0]         eop_wis; // one-hot wis, set on eop
+        logic [NCTA_WIDTH-1:0]              cta_id;
+        logic [SIMD_IDX_W-1:0]              sid;
+        logic [`VX_CFG_SIMD_WIDTH-1:0]             tmask;
+        logic [PC_BITS-1:0]                 PC;
+        logic                               wb;
+        logic [NUM_XREGS-1:0]               wr_xregs;
+        logic [NUM_REGS_BITS-1:0]           rd;
+        logic [`VX_CFG_SIMD_WIDTH-1:0][XLENB-1:0]  byteen;
+        logic [`VX_CFG_SIMD_WIDTH-1:0][`VX_CFG_XLEN-1:0]  data;
+        logic                               sop;
+        logic                               eop;
+    } writeback_t;
+
+    typedef struct packed {
+        logic [UUID_WIDTH-1:0]              uuid;
+        logic [NW_WIDTH-1:0]                wid;
+        logic [NCTA_WIDTH-1:0]              cta_id;
+        logic [`VX_CFG_NUM_THREADS-1:0]            tmask;
+        logic [PC_BITS-1:0]                 PC;
+    } schedule_t;
+
+    `DECL_EXECUTE_T (alu, `VX_CFG_NUM_ALU_LANES);
+    `DECL_EXECUTE_T (lsu, `VX_CFG_NUM_LSU_LANES);
+    `DECL_EXECUTE_T (sfu, `VX_CFG_NUM_SFU_LANES);
+
+    //////////////////////////// Perf counter types ///////////////////////////
+
+    typedef struct packed {
+        logic [PERF_CTR_BITS-1:0] reads;
+        logic [PERF_CTR_BITS-1:0] writes;
+        logic [PERF_CTR_BITS-1:0] read_misses;
+        logic [PERF_CTR_BITS-1:0] write_misses;
+        logic [PERF_CTR_BITS-1:0] evictions;
+        logic [PERF_CTR_BITS-1:0] bank_stalls;
+        logic [PERF_CTR_BITS-1:0] mshr_stalls;
+        logic [PERF_CTR_BITS-1:0] mem_stalls;
+        logic [PERF_CTR_BITS-1:0] crsp_stalls;
+    } cache_perf_t;
+
+    typedef struct packed {
+        logic [PERF_CTR_BITS-1:0] reads;
+        logic [PERF_CTR_BITS-1:0] writes;
+        logic [PERF_CTR_BITS-1:0] bank_stalls;
+        logic [PERF_CTR_BITS-1:0] crsp_stalls;
+    } lmem_perf_t;
+
+    typedef struct packed {
+        logic [PERF_CTR_BITS-1:0] misses;
+    } coalescer_perf_t;
+
+// Declared unconditionally, because its references do not agree on a guard:
+// the ports of VX_mmu and VX_tlb_l1 and the signals in VX_socket are gated on
+// PERF_ENABLE, while the field in pipeline_perf_t is gated on VM. Gating the
+// declaration on either one alone breaks the other combination -- VM without
+// PERF, or PERF without VM. The latter is what failed here: Vivado elaborates
+// every file in the source list whether or not the module is ever instantiated,
+// so VX_mmu.sv was compiled in a VM-disabled build and found no such type.
+// The Verilator flow hides the mismatch, because its library search compiles
+// only what is reachable. A typedef with no instances costs no hardware.
+    typedef struct packed {
+        logic [PERF_CTR_BITS-1:0] tlb_reads;
+        logic [PERF_CTR_BITS-1:0] tlb_hits;
+        logic [PERF_CTR_BITS-1:0] tlb_misses;
+        logic [PERF_CTR_BITS-1:0] tlb_evictions;
+        logic [PERF_CTR_BITS-1:0] ptw_walks;
+        logic [PERF_CTR_BITS-1:0] ptw_latency;
+    } mmu_perf_t;
+
+`ifdef VX_CFG_EXT_TCU_ENABLE
+    typedef struct packed {
+        logic [PERF_CTR_BITS-1:0] lmem_reads;        // LMEM read transactions issued by tile buffer
+        logic [PERF_CTR_BITS-1:0] tbuf_cache_hits;   // B tile reuse hits from tile buffer cache
+        logic [PERF_CTR_BITS-1:0] wgmma_stalls;      // cycles: WGMMA valid but stalled (tbuf or mdata)
+        logic [PERF_CTR_BITS-1:0] wgmma_instrs;      // WGMMA µops executed
+        logic [PERF_CTR_BITS-1:0] tbuf_stalls;         // cycles: WGMMA valid but stalled (uop cannot enter TCU core because tbuf data not ready)
+    } tcu_perf_t;
+`endif
+
+    typedef struct packed {
+        logic [PERF_CTR_BITS-1:0] reads;
+        logic [PERF_CTR_BITS-1:0] writes;
+        logic [PERF_CTR_BITS-1:0] latency;
+    } mem_perf_t;
+
+`ifdef VX_CFG_EXT_DXA_ENABLE
+    typedef struct packed {
+        logic [PERF_CTR_BITS-1:0] transfers;
+        logic [PERF_CTR_BITS-1:0] gmem_reads;
+        logic [PERF_CTR_BITS-1:0] gmem_dedup;
+        logic [PERF_CTR_BITS-1:0] lmem_writes;
+        logic [PERF_CTR_BITS-1:0] gmem_latency;
+        logic [PERF_CTR_BITS-1:0] noslot_stalls;
+    } dxa_perf_t;
+`endif
+
+`ifdef VX_CFG_EXT_TEX_ENABLE
+    typedef struct packed {
+        logic [PERF_CTR_BITS-1:0] mem_reads;
+        logic [PERF_CTR_BITS-1:0] mem_latency;
+        logic [PERF_CTR_BITS-1:0] stall_cycles;
+    } tex_perf_t;
+`endif
+
+`ifdef VX_CFG_EXT_RASTER_ENABLE
+    typedef struct packed {
+        logic [PERF_CTR_BITS-1:0] mem_reads;
+        logic [PERF_CTR_BITS-1:0] mem_latency;
+        logic [PERF_CTR_BITS-1:0] stall_cycles;
+    } raster_perf_t;
+`endif
+
+`ifdef VX_CFG_EXT_OM_ENABLE
+    typedef struct packed {
+        logic [PERF_CTR_BITS-1:0] mem_reads;
+        logic [PERF_CTR_BITS-1:0] mem_writes;
+        logic [PERF_CTR_BITS-1:0] mem_latency;
+        logic [PERF_CTR_BITS-1:0] stall_cycles;
+    } om_perf_t;
+`endif
+
+`ifdef VX_CFG_EXT_RTU_ENABLE
+    typedef struct packed {
+        logic [PERF_CTR_BITS-1:0] rays;
+        logic [PERF_CTR_BITS-1:0] hits;
+        logic [PERF_CTR_BITS-1:0] box_tests;
+        logic [PERF_CTR_BITS-1:0] tri_tests;
+        logic [PERF_CTR_BITS-1:0] callbacks;
+        logic [PERF_CTR_BITS-1:0] busy;
+    } rtu_perf_t;
+`endif
+
+    typedef struct packed {
+        logic [PERF_CTR_BITS-1:0] idles;
+        logic [PERF_CTR_BITS-1:0] active_warps;
+        logic [PERF_CTR_BITS-1:0] stalled_warps;
+        logic [PERF_CTR_BITS-1:0] issued_warps;
+        logic [PERF_CTR_BITS-1:0] issued_threads;
+        logic [PERF_CTR_BITS-1:0] branches;
+        logic [PERF_CTR_BITS-1:0] divergence;
+    } sched_perf_t;
+
+    typedef struct packed {
+        logic [PERF_CTR_BITS-1:0] stalls;
+    } fetch_perf_t;
+
+    typedef struct packed {
+        logic [PERF_CTR_BITS-1:0] ibf_stalls;
+        logic [PERF_CTR_BITS-1:0] scb_stalls;
+        logic [PERF_CTR_BITS-1:0] opd_stalls;
+        logic [NUM_EX_UNITS-1:0][PERF_CTR_BITS-1:0] dispatch_stalls;
+        logic [NUM_EX_UNITS-1:0][PERF_CTR_BITS-1:0] dispatch_instrs;
+    } issue_perf_t;
+
+    typedef struct packed {
+        cache_perf_t icache;
+        cache_perf_t dcache;
+        cache_perf_t l2cache;
+        cache_perf_t l3cache;
+        lmem_perf_t  lmem;
+        coalescer_perf_t coalescer;
+        mem_perf_t   mem;
+    `ifdef VX_CFG_EXT_DXA_ENABLE
+        dxa_perf_t   dxa;
+    `endif
+    `ifdef VX_CFG_EXT_TEX_ENABLE
+        tex_perf_t   tex;
+        cache_perf_t tcache;
+    `endif
+    `ifdef VX_CFG_EXT_RASTER_ENABLE
+        raster_perf_t raster;
+        cache_perf_t  rcache;
+    `endif
+    `ifdef VX_CFG_EXT_OM_ENABLE
+        om_perf_t    om;
+        cache_perf_t ocache;
+    `endif
+    `ifdef VX_CFG_EXT_RTU_ENABLE
+        rtu_perf_t   rtu;
+        cache_perf_t rtcache;
+    `endif
+    } sysmem_perf_t;
+
+    typedef struct packed {
+        sched_perf_t              sched;
+        fetch_perf_t              fetch;
+        issue_perf_t              issue;
+    `ifdef VX_CFG_EXT_TCU_ENABLE
+        tcu_perf_t                tcu;
+    `endif
+    `ifdef VX_CFG_VM_ENABLE
+        mmu_perf_t                mmu;
+    `endif
+        logic [PERF_CTR_BITS-1:0] ifetches;
+        logic [PERF_CTR_BITS-1:0] loads;
+        logic [PERF_CTR_BITS-1:0] stores;
+        logic [PERF_CTR_BITS-1:0] ifetch_latency;
+        logic [PERF_CTR_BITS-1:0] load_latency;
+   } pipeline_perf_t;
+
+    ///////////////////////// LSU memory Parameters ///////////////////////////
+
+    localparam LSU_WORD_SIZE        = XLENB;
+    localparam LSU_ADDR_WIDTH	    = (`VX_CFG_MEM_ADDR_WIDTH - `CLOG2(LSU_WORD_SIZE));
+    localparam LSU_MEM_BATCHES      = 1;
+    localparam LSU_TAG_ID_BITS      = (`CLOG2(`VX_CFG_LSU_PENDING_SIZE) + `CLOG2(LSU_MEM_BATCHES));
+    localparam LSU_TAG_WIDTH        = (UUID_WIDTH + LSU_TAG_ID_BITS);
+    localparam LSU_NUM_REQS	        = `VX_CFG_NUM_LSU_BLOCKS * `VX_CFG_NUM_LSU_LANES;
+
+    // Mem-side queue depth: derived, not a config knob. Its CLOG2 sets the
+    // dcache-facing tag-id width (DCACHE_TAG_ID_BITS) and the word-coalescer's
+    // slot count, so it must cover both the outstanding pool and one LSU
+    // line's worth of words; sizing it below either would truncate slot ids
+    // (response aliasing) or cap MLP at the coalescer.
+    localparam LSU_QUEUE_OUT_SIZE   = `MAX(`VX_CFG_LSU_PENDING_SIZE, `VX_CFG_LSU_LINE_SIZE / LSU_WORD_SIZE);
+    localparam LMEM_TAG_WIDTH_BASE  = LSU_TAG_WIDTH + `CLOG2(`VX_CFG_NUM_LSU_BLOCKS);
+    localparam LMEM_TAG_WIDTH       = LMEM_TAG_WIDTH_BASE;
+
+    // Width of the tag carried over VX_lsu_sched_if: lsu_header + op_type
+    // + per-lane align + packet allocator addr + fence flag (matches the
+    // local TAG_WIDTH built inside VX_lsu_block).
+    localparam LSU_CLIENT_TAG_WIDTH = $bits(lsu_header_t) + INST_LSU_BITS
+                                    + (`VX_CFG_NUM_LSU_LANES * `CLOG2(LSU_WORD_SIZE))
+                                    + `LOG2UP(`VX_CFG_LSU_PENDING_SIZE) + 1;
+
+    // Request/response payloads for VX_lsu_sched_if. Valid/ready live on
+    // the interface, never in the payload (Vortex elastic-idiom rule).
+    typedef struct packed {
+        logic                                                       rw;
+        logic [`VX_CFG_NUM_LSU_LANES-1:0]                           mask;
+        logic [`VX_CFG_NUM_LSU_LANES-1:0][LSU_WORD_SIZE-1:0]        byteen;
+        logic [`VX_CFG_NUM_LSU_LANES-1:0][LSU_ADDR_WIDTH-1:0]       addr;
+        logic [`VX_CFG_NUM_LSU_LANES-1:0][MEM_ATTR_WIDTH-1:0]       attr;
+        logic [`VX_CFG_NUM_LSU_LANES-1:0][(LSU_WORD_SIZE*8)-1:0]    data;
+        logic [LSU_CLIENT_TAG_WIDTH-1:0]                            tag;
+    } lsu_req_data_t;
+
+    typedef struct packed {
+        logic [`VX_CFG_NUM_LSU_LANES-1:0]                           mask;
+        logic [`VX_CFG_NUM_LSU_LANES-1:0][(LSU_WORD_SIZE*8)-1:0]    data;
+        logic [LSU_CLIENT_TAG_WIDTH-1:0]                            tag;
+        logic                                                       sop;
+        logic                                                       eop;
+    } lsu_rsp_data_t;
+
+    // DXA lmem tag and attr widths for DMA arb.
+    localparam DXA_LMEM_ATTR_W = (BAR_ADDR_W + 1);
+    localparam DXA_LMEM_ENGINE_TAG_W = UUID_WIDTH + 1;
+    localparam DXA_LMEM_TAG_W = DXA_LMEM_ENGINE_TAG_W + NC_BITS;
+    localparam DXA_LMEM_OUT_TAG_W = DXA_LMEM_TAG_W + `ARB_SEL_BITS(`VX_CFG_NUM_DXA_CORES, 1);
+
+    // TCU lmem tag and attr widths for DMA arb.
+    // Masters into the TCU LMEM port: BLOCK_SIZE abufs + 1 shared bbuf.
+    // (Sparse metadata does not fetch from LMEM — it preloads into the
+    // VX_tcu_sp_meta SRAM via TCU_LD ahead of the MMA dispatch.)
+    localparam TCU_LMEM_ATTR_W = 1;
+    localparam TCU_LMEM_BLK_TAG_W = UUID_WIDTH + 1;
+    localparam TCU_LMEM_NUM_MASTERS = `VX_CFG_NUM_TCU_BLOCKS + 1;
+    localparam TCU_LMEM_TAG_W = TCU_LMEM_BLK_TAG_W + `ARB_SEL_BITS(TCU_LMEM_NUM_MASTERS, 1);
+
+    // LMEM DMA port parameters. (The raster FWD needs no LMEM DMA agent —
+    // the raster stamp rides the launch itself.)
+    localparam LMEM_DMA_EN         = (`VX_CFG_EXT_DXA_ENABLED + `VX_CFG_TCU_WGMMA_ENABLED) != 0;
+    localparam LMEM_DMA_DATA_SIZE  = `VX_CFG_LMEM_NUM_BANKS * LSU_WORD_SIZE;
+    localparam LMEM_DMA_ADDR_WIDTH = `VX_CFG_LMEM_LOG_SIZE - `CLOG2(`VX_CFG_LMEM_NUM_BANKS * LSU_WORD_SIZE);
+    localparam LMEM_DMA_ATTR_W     = `MAX(DXA_LMEM_ATTR_W, TCU_LMEM_ATTR_W);
+    localparam LMEM_DMA_DXA_IDX    = 0;
+    localparam LMEM_DMA_TCU_IDX    = LMEM_DMA_DXA_IDX + `VX_CFG_EXT_DXA_ENABLED;
+    localparam LMEM_DMA_INPUTS     = `VX_CFG_EXT_DXA_ENABLED + `VX_CFG_TCU_WGMMA_ENABLED;
+    localparam LMEM_DMA_IN_TAG_MAX = `MAX(DXA_LMEM_OUT_TAG_W, TCU_LMEM_TAG_W);
+    localparam LMEM_DMA_TAG_WIDTH  = LMEM_DMA_IN_TAG_MAX + `ARB_SEL_BITS(LMEM_DMA_INPUTS, 1);
+
+    ////////////////////////// Icache Parameters //////////////////////////////
+
+    // Word size in bytes
+    localparam ICACHE_WORD_SIZE	    = 4;
+    localparam ICACHE_ADDR_WIDTH	= (`VX_CFG_MEM_ADDR_WIDTH - `CLOG2(ICACHE_WORD_SIZE));
+
+    // Block size in bytes
+    localparam ICACHE_LINE_SIZE	    = `VX_CFG_L1_LINE_SIZE;
+
+    // Request ports per core: one per frontend slice, each fetching its own warps
+    localparam ICACHE_NUM_REQS  = `VX_CFG_FETCH_WIDTH;
+    localparam ICACHE_NUM_BANKS = `VX_CFG_ICACHE_NUM_BANKS;
+
+    // Core request tag Id bits: the warp id local to the requesting frontend slice
+    localparam ICACHE_TAG_ID_BITS	= FETCH_WFS_W;
+
+    // Core request tag bits as VX_fetch writes them (UUID + warp id).
+    localparam ICACHE_FETCH_TAG_WIDTH = (UUID_WIDTH + ICACHE_TAG_ID_BITS);
+
+    // Core request tag bits on mmu_icache_if (post-flush, pre-MMU). When
+    // VM_ENABLE is on, the iMMU widens this by ICACHE_TLB_SOURCE_BITS for
+    // its internal bypass/TLB/PTW arbiter; the externally-visible
+    // icache_bus_if (ICACHE_TAG_WIDTH below) carries that wider tag.
+    // The +1 is the VX_dcr_flush arb-sel bit injected on the icache side.
+    localparam ICACHE_TAG_WIDTH_BASE = (ICACHE_FETCH_TAG_WIDTH + 1);
+    // The iMMU forwards the translated tag unchanged: ITLB misses are walked
+    // by the shared per-core walker, whose PTE fetches ride the dcache port,
+    // so the icache stream carries no extra MMU arbitration bit.
+    localparam ICACHE_TAG_WIDTH       = ICACHE_TAG_WIDTH_BASE;
+
+    // Memory request data bits
+    localparam ICACHE_MEM_DATA_WIDTH = (ICACHE_LINE_SIZE * 8);
+
+    // Memory request tag bits
+`ifdef VX_CFG_ICACHE_ENABLE
+    localparam ICACHE_MEM_TAG_WIDTH = `CACHE_CLUSTER_MEM_TAG_WIDTH(`VX_CFG_ICACHE_MSHR_SIZE, ICACHE_NUM_BANKS, 1, `VX_CFG_NUM_ICACHES, UUID_WIDTH);
+`else
+    localparam ICACHE_MEM_TAG_WIDTH = `CACHE_CLUSTER_BYPASS_MEM_TAG_WIDTH(ICACHE_NUM_REQS, 1, ICACHE_LINE_SIZE, ICACHE_WORD_SIZE, ICACHE_TAG_WIDTH, `VX_CFG_SOCKET_SIZE, `VX_CFG_NUM_ICACHES);
+`endif
+
+    ////////////////////////// Dcache Parameters //////////////////////////////
+
+    // Word size in bytes (coalescer output granule; decoupled from LSU_LINE_SIZE
+    // via VX_CFG_DCACHE_WORD_SIZE so channels/ports/banks scale independently of
+    // the LSU pipe count — see Feature A. Default = LSU_LINE_SIZE.)
+    localparam DCACHE_WORD_SIZE	    = `VX_CFG_DCACHE_WORD_SIZE;
+    localparam DCACHE_ADDR_WIDTH	= (`VX_CFG_MEM_ADDR_WIDTH - `CLOG2(DCACHE_WORD_SIZE));
+
+    // Block size in bytes
+    localparam DCACHE_LINE_SIZE 	= `VX_CFG_DCACHE_LINE_SIZE;
+    // Sector = mem transaction granule (= line when 1 sector/line). The mem-side
+    // datapath (mem bus, fill/writeback beats, mem tag) is sized on the sector;
+    // the cache line is an internal multiple of it.
+    localparam DCACHE_SECTOR_SIZE   = `VX_CFG_DCACHE_SECTOR_SIZE;
+
+    // Input request size (using coalesced memory blocks)
+    localparam DCACHE_CHANNELS	    = `UP((`VX_CFG_NUM_LSU_LANES * LSU_WORD_SIZE) / DCACHE_WORD_SIZE);
+    localparam DCACHE_NUM_REQS	    = `VX_CFG_NUM_LSU_BLOCKS * DCACHE_CHANNELS;
+    localparam DCACHE_NUM_BANKS     = `VX_CFG_DCACHE_NUM_BANKS;
+    localparam L1_MEM_PORTS         = `VX_CFG_L1_MEM_PORTS;
+
+    // Core request tag Id bits
+    localparam DCACHE_MERGED_REQS   = (`VX_CFG_NUM_LSU_LANES * LSU_WORD_SIZE) / DCACHE_WORD_SIZE;
+    localparam DCACHE_MEM_BATCHES   = `CDIV(DCACHE_MERGED_REQS, DCACHE_CHANNELS);
+    localparam DCACHE_TAG_ID_BITS   = (`CLOG2(LSU_QUEUE_OUT_SIZE) + `CLOG2(DCACHE_MEM_BATCHES));
+
+    // Core request tag bits
+    localparam DCACHE_CORE_TAG_WIDTH = (UUID_WIDTH + DCACHE_TAG_ID_BITS);
+
+    // Core request tag bits on dcache_bus_if port of VX_core (+1 for flush-arb sel bit)
+    // Pre-MMU width (an LSU block's D-cache port, including the flush sel bit).
+    // When VM_ENABLE is on, the dMMU widens this by DCACHE_TLB_SOURCE_BITS
+    // for its internal bypass/TLB/PTW arbiter, so the cache cluster sees
+    // the wider DCACHE_TAG_WIDTH below.
+    localparam DCACHE_TAG_WIDTH_BASE = (DCACHE_CORE_TAG_WIDTH + 1);
+    // The dMMU translates each lane in place (no serialize/deserialize). The
+    // shared walker lives at the cluster and fetches PTEs through the L2 cache,
+    // so the dcache tag is the base width in every mode.
+    localparam DCACHE_TAG_WIDTH       = DCACHE_TAG_WIDTH_BASE;
+
+    // Memory request data bits (mem transacts in sectors)
+    localparam DCACHE_MEM_DATA_WIDTH = (DCACHE_SECTOR_SIZE * 8);
+
+    // Memory request tag bits (computed with DCACHE_TAG_WIDTH since
+    // VX_cache_cluster sees the post-arb tag width). The bypass tag encodes the
+    // in-block offset at the mem granule, so it uses the sector, not the line.
+`ifdef VX_CFG_DCACHE_ENABLE
+    localparam DCACHE_MEM_TAG_WIDTH = `CACHE_CLUSTER_NC_MEM_TAG_WIDTH(`VX_CFG_DCACHE_MSHR_SIZE, DCACHE_NUM_BANKS, DCACHE_NUM_REQS, L1_MEM_PORTS, DCACHE_SECTOR_SIZE, DCACHE_WORD_SIZE, DCACHE_TAG_WIDTH, `VX_CFG_SOCKET_SIZE, `VX_CFG_NUM_DCACHES, UUID_WIDTH);
+`else
+    localparam DCACHE_MEM_TAG_WIDTH = `CACHE_CLUSTER_BYPASS_MEM_TAG_WIDTH(DCACHE_NUM_REQS, L1_MEM_PORTS, DCACHE_SECTOR_SIZE, DCACHE_WORD_SIZE, DCACHE_TAG_WIDTH, `VX_CFG_SOCKET_SIZE, `VX_CFG_NUM_DCACHES);
+`endif
+
+    // L1 dcache is the LLC iff neither L2 nor L3 is enabled.
+    localparam DCACHE_IS_LLC        = !`VX_CFG_L2_ENABLED && !`VX_CFG_L3_ENABLED;
+    // It is the point of coherence between kernels only as the one dcache,
+    // shared by every core of the one socket, with no other memory client
+    // beside it (the texture, ray-tracing and DXA ports join below it, the
+    // raster and OM caches beside it).
+    localparam DCACHE_SHARED_LLC    = DCACHE_IS_LLC && (`VX_CFG_NUM_CLUSTERS == 1)
+                                   && (`VX_CFG_NUM_CORES == `VX_CFG_SOCKET_SIZE) && (`VX_CFG_NUM_DCACHES == 1)
+                                   && !`VX_CFG_EXT_TEX_ENABLED && !`VX_CFG_EXT_RTU_ENABLED
+                                   && !`VX_CFG_EXT_RASTER_ENABLED && !`VX_CFG_EXT_OM_ENABLED
+                                   && !`VX_CFG_EXT_DXA_ENABLED;
+
+    ////////////////////////// Tex / Tcache Parameters ////////////////////////
+`ifdef VX_CFG_EXT_TEX_ENABLE
+    // tex unit: per-request queue + per-request tag
+    localparam TEX_REQ_TAG_WIDTH      = (UUID_WIDTH + `CLOG2(`VX_CFG_TEX_REQ_QUEUE_SIZE));
+    // core-level arb: SFU blocks -> the core's texture bus
+    localparam TEX_CORE_TAG_WIDTH     = (TEX_REQ_TAG_WIDTH + `ARB_SEL_BITS(`VX_CFG_NUM_SFU_BLOCKS, 1));
+    // Single socket-level arb: socket cores -> per-socket TEX units
+    localparam TEX_REQ_ARB1_TAG_WIDTH = (TEX_CORE_TAG_WIDTH + `ARB_SEL_BITS(`VX_CFG_SOCKET_SIZE, `VX_CFG_NUM_TEX_CORES));
+
+    localparam TCACHE_WORD_SIZE     = 4;
+    localparam TCACHE_ADDR_WIDTH    = (`VX_CFG_MEM_ADDR_WIDTH - `CLOG2(TCACHE_WORD_SIZE));
+    localparam TCACHE_LINE_SIZE     = `VX_CFG_L1_LINE_SIZE;
+    localparam TCACHE_NUM_REQS      = `VX_CFG_TCACHE_NUM_BANKS;
+
+    // Mip levels a sample reads at once: two, so a mip-linear sample carries
+    // both levels in one request and no stage has to pair two responses.
+    localparam TEX_NUM_LEVELS       = 2;
+
+    // Per-tex-unit memory port count (4 bilinear taps × levels × NUM_SFU_LANES)
+    localparam TEX_MEM_REQS         = (4 * TEX_NUM_LEVELS * `VX_CFG_NUM_SFU_LANES);
+
+    localparam TCACHE_BATCH_SEL_BITS = `ARB_SEL_BITS(TEX_MEM_REQS, TCACHE_NUM_REQS);
+    localparam TCACHE_TAG_ID_BITS    = (`CLOG2(`VX_CFG_TEX_MEM_QUEUE_SIZE) + TCACHE_BATCH_SEL_BITS);
+    // Core-side (tex_core's cache_bus_if) tag width.
+    localparam TCACHE_TAG_WIDTH      = (UUID_WIDTH + TCACHE_TAG_ID_BITS);
+    // Cache-side tag width = core-side + 1 bit reserved by VX_dcr_flush, so
+    // a flush token can be injected without aliasing real requests.
+    localparam TCACHE_BUS_TAG_WIDTH  = (TCACHE_TAG_WIDTH + 1);
+    localparam TCACHE_MEM_DATA_WIDTH = (TCACHE_LINE_SIZE * 8);
+    localparam TCACHE_MEM_PORTS      = 1;
+    // Cache-enabled (NC_ENABLE=0, PASSTHRU=0) tag width = cache_cluster's
+    // CACHE_MEM_TAG_WIDTH + per-cache arb-sel bits.
+    localparam TCACHE_MEM_TAG_WIDTH  = `CACHE_CLUSTER_MEM_TAG_WIDTH(
+        `VX_CFG_TCACHE_MSHR_SIZE, `VX_CFG_TCACHE_NUM_BANKS, TCACHE_MEM_PORTS, `VX_CFG_NUM_TCACHES, UUID_WIDTH);
+`endif
+
+    ////////////////////////// Raster / Rcache Parameters /////////////////////
+`ifdef VX_CFG_EXT_RASTER_ENABLE
+    localparam RCACHE_WORD_SIZE      = 4;
+    localparam RCACHE_ADDR_WIDTH     = (`VX_CFG_MEM_ADDR_WIDTH - `CLOG2(RCACHE_WORD_SIZE));
+    localparam RCACHE_LINE_SIZE      = `VX_CFG_L1_LINE_SIZE;
+    localparam RCACHE_NUM_REQS       = `VX_CFG_RCACHE_NUM_BANKS;
+
+    // Per-raster-unit primitive-fetch port count. 9 = 3 vertices × 3 attributes
+    // (edge coefficients). With early-Z the record also carries the screen-space
+    // depth plane {A',B',C'} that follows the 9 edge words, so the fetch is
+    // widened to 12 words; without early-Z the fetch stays 9 words (byte-identical
+    // to the no-early-Z pipeline). The early-Z committed-depth read is coherent
+    // with the ROP and thus goes through the OM's ocache, never the rcache — so
+    // the rcache carries a single requester (the fetch unit) in either build.
+`ifdef VX_CFG_RASTER_EARLYZ_ENABLE
+    localparam RASTER_MEM_REQS       = 12;
+`else
+    localparam RASTER_MEM_REQS       = 9;
+`endif
+
+    localparam RCACHE_BATCH_SEL_BITS = `ARB_SEL_BITS(RASTER_MEM_REQS, RCACHE_NUM_REQS);
+    localparam RCACHE_TAG_ID_BITS    = (`CLOG2(`VX_CFG_RASTER_MEM_QUEUE_SIZE) + RCACHE_BATCH_SEL_BITS);
+
+    // The primitive/tile fetch unit owns a VX_mem_scheduler whose memory-side tag
+    // width is UUID + CLOG2(queue_size) + batch-select bits. The scheduler runs
+    // un-coalesced (LINE_SIZE defaults to WORD_SIZE), so each request is its own
+    // batch: mem-tag width = UUID + CLOG2(queue_size) + ARB_SEL_BITS(reqs,
+    // channels). This matches the scheduler's internal MEM_TAG_WIDTH.
+    localparam RCACHE_FETCH_TAG_WIDTH  = (UUID_WIDTH + `CLOG2(`VX_CFG_RASTER_MEM_QUEUE_SIZE) + `ARB_SEL_BITS(RASTER_MEM_REQS, RCACHE_NUM_REQS));
+    // The rcache carries only the fetch requester (early-Z reads the ocache).
+    localparam RCACHE_TAG_WIDTH      = RCACHE_FETCH_TAG_WIDTH;
+    // Cache-side bus width (raster_core → flush wrapper → rcache).
+    localparam RCACHE_BUS_TAG_WIDTH  = (RCACHE_TAG_WIDTH + 1);
+    localparam RCACHE_MEM_DATA_WIDTH = (RCACHE_LINE_SIZE * 8);
+    localparam RCACHE_MEM_PORTS      = 1;
+    localparam RCACHE_MEM_TAG_WIDTH  = `CACHE_CLUSTER_MEM_TAG_WIDTH(
+        `VX_CFG_RCACHE_MSHR_SIZE, `VX_CFG_RCACHE_NUM_BANKS, RCACHE_MEM_PORTS, `VX_CFG_NUM_RCACHES, UUID_WIDTH);
+`endif
+
+    ////////////////////////// OM / Ocache Parameters /////////////////////////
+`ifdef VX_CFG_EXT_OM_ENABLE
+    localparam OCACHE_WORD_SIZE      = 4;
+    localparam OCACHE_ADDR_WIDTH     = (`VX_CFG_MEM_ADDR_WIDTH - `CLOG2(OCACHE_WORD_SIZE));
+    localparam OCACHE_LINE_SIZE      = `VX_CFG_L1_LINE_SIZE;
+    localparam OCACHE_NUM_REQS       = `VX_CFG_OCACHE_NUM_BANKS;
+
+    // OM cores are beat-serial: the ingress emits one fragment per request and
+    // the ocache drains at bank rate, so per-fragment lane width buys no fill
+    // rate. Fill rate scales with NUM_OM_CORES x OCACHE_NUM_BANKS instead.
+    localparam OM_CORE_LANES         = 1;
+
+    // Per-OM-unit memory port count (2 ports × OM_CORE_LANES: color + depth)
+    localparam OM_MEM_REQS           = (2 * OM_CORE_LANES);
+
+    localparam OCACHE_BATCH_SEL_BITS = `ARB_SEL_BITS(OM_MEM_REQS, OCACHE_NUM_REQS);
+    localparam OCACHE_TAG_ID_BITS    = (`CLOG2(`VX_CFG_OM_MEM_QUEUE_SIZE) + OCACHE_BATCH_SEL_BITS);
+    localparam OCACHE_TAG_WIDTH      = (UUID_WIDTH + OCACHE_TAG_ID_BITS);
+
+    // Early-Z committed-depth read shares the ocache so it is coherent with the
+    // OM's write-through depth stores. Each raster engine attaches one early-Z
+    // depth-read requester as an additional ocache NUM_INPUTS group (OCACHE_NUM_REQS
+    // ports), mirroring how OM cores attach. The reader owns a VX_mem_scheduler
+    // whose mem-side tag = UUID + CLOG2(RASTER_MEM_QUEUE_SIZE) + batch-select bits;
+    // the ocache cluster's internal core arbiter appends the input-select bits, so
+    // the shared per-input bus tag is the wider of the OM and early-Z requesters
+    // (a narrower requester zero-pads via _EX).
+`ifdef VX_CFG_RASTER_EARLYZ_ENABLE
+    localparam OCACHE_EARLYZ_REQS      = (4 * `VX_CFG_NUM_THREADS);
+    // Per-slice reader scheduler tag (one committed-depth word per covered pixel).
+    localparam OCACHE_EARLYZ_REQ_TAG_WIDTH = (UUID_WIDTH + `CLOG2(`VX_CFG_RASTER_MEM_QUEUE_SIZE) + `ARB_SEL_BITS(OCACHE_EARLYZ_REQS, OCACHE_NUM_REQS));
+    // A raster engine merges its NUM_SLICES readers onto its single ocache input
+    // group; the intra-core arbiter adds slice-select bits above the reader tag.
+    localparam OCACHE_EARLYZ_SLICE_SEL = `CLOG2(`VX_CFG_RASTER_NUM_SLICES);
+    localparam OCACHE_EARLYZ_TAG_WIDTH = (OCACHE_EARLYZ_REQ_TAG_WIDTH + OCACHE_EARLYZ_SLICE_SEL);
+    localparam OCACHE_REQ_TAG_WIDTH    = `MAX(OCACHE_TAG_WIDTH, OCACHE_EARLYZ_TAG_WIDTH);
+    // OM cores + one early-Z depth reader group per raster engine.
+    localparam OCACHE_NUM_INPUTS       = (`VX_CFG_NUM_OM_CORES + `VX_CFG_NUM_RASTER_CORES);
+`else
+    localparam OCACHE_REQ_TAG_WIDTH    = OCACHE_TAG_WIDTH;
+    localparam OCACHE_NUM_INPUTS       = `VX_CFG_NUM_OM_CORES;
+`endif
+    // Cache-side bus width (om_core / early-Z reader → flush wrapper → ocache).
+    localparam OCACHE_BUS_TAG_WIDTH  = (OCACHE_REQ_TAG_WIDTH + 1);
+    localparam OCACHE_MEM_DATA_WIDTH = (OCACHE_LINE_SIZE * 8);
+    localparam OCACHE_MEM_PORTS      = 1;
+    localparam OCACHE_MEM_TAG_WIDTH  = `CACHE_CLUSTER_MEM_TAG_WIDTH(
+        `VX_CFG_OCACHE_MSHR_SIZE, `VX_CFG_OCACHE_NUM_BANKS, OCACHE_MEM_PORTS, `VX_CFG_NUM_OCACHES, UUID_WIDTH);
+`endif
+
+    ////////////////////////// RTU / RTcache Parameters ///////////////////////
+`ifdef VX_CFG_EXT_RTU_ENABLE
+    localparam RTU_REQ_QUEUE_SIZE     = 4;
+    localparam RTU_REQ_TAG_WIDTH      = (UUID_WIDTH + `CLOG2(RTU_REQ_QUEUE_SIZE));
+    // core-level arb: SFU blocks -> the core's RTU bus
+    localparam RTU_CORE_TAG_WIDTH     = (RTU_REQ_TAG_WIDTH + `ARB_SEL_BITS(`VX_CFG_NUM_SFU_BLOCKS, 1));
+    // Single socket-level arb: socket cores -> per-socket RTU units
+    localparam RTU_REQ_ARB1_TAG_WIDTH = (RTU_CORE_TAG_WIDTH + `ARB_SEL_BITS(`VX_CFG_SOCKET_SIZE, `VX_CFG_NUM_RTU_CORES));
+
+    // The RTU fetches a whole CW-BVH node (one 64 B cache line) per request,
+    // so its cache is line-granular: word size == line size, one port/core.
+    localparam RTCACHE_WORD_SIZE     = `VX_CFG_L1_LINE_SIZE;
+    localparam RTCACHE_ADDR_WIDTH    = (`VX_CFG_MEM_ADDR_WIDTH - `CLOG2(RTCACHE_WORD_SIZE));
+    localparam RTCACHE_LINE_SIZE     = `VX_CFG_L1_LINE_SIZE;
+    localparam RTCACHE_NUM_REQS      = 1;
+    // The core-side tag carries the RTU context index.
+    localparam RTCACHE_TAG_ID_BITS   = `CLOG2(`VX_CFG_RTU_NUM_CTX);
+    localparam RTCACHE_TAG_WIDTH     = (UUID_WIDTH + RTCACHE_TAG_ID_BITS);
+    localparam RTCACHE_BUS_TAG_WIDTH = (RTCACHE_TAG_WIDTH + 1);
+    localparam RTCACHE_MEM_DATA_WIDTH= (RTCACHE_LINE_SIZE * 8);
+    localparam RTCACHE_MEM_PORTS     = 1;
+    localparam RTCACHE_MEM_TAG_WIDTH = `CACHE_CLUSTER_MEM_TAG_WIDTH(
+        `VX_CFG_RTCACHE_MSHR_SIZE, `VX_CFG_RTCACHE_NUM_BANKS, RTCACHE_MEM_PORTS, `VX_CFG_NUM_RTCACHES, UUID_WIDTH);
+`endif
+
+    /////////////////////////////// L1 Parameters /////////////////////////////
+
+    localparam L1_MEM_TAG_WIDTH     = `MAX(ICACHE_MEM_TAG_WIDTH, DCACHE_MEM_TAG_WIDTH);
+
+    // Socket L2-facing arb (mem port 0): icache and dcache arbitrate with the
+    // socket-resident units' memory ports (tcache, rtcache, DXA gmem) as peers.
+    localparam ICACHE_MEM_ARB_IDX   = 0;
+    localparam DCACHE_MEM_ARB_IDX   = ICACHE_MEM_ARB_IDX + 1;
+    localparam TCACHE_MEM_ARB_IDX   = DCACHE_MEM_ARB_IDX + 1;
+    localparam RTCACHE_MEM_ARB_IDX  = TCACHE_MEM_ARB_IDX + `VX_CFG_EXT_TEX_ENABLED;
+    localparam DXA_MEM_ARB_IDX      = RTCACHE_MEM_ARB_IDX + `VX_CFG_EXT_RTU_ENABLED;
+    localparam SOCKET_MEM_ARB_REQS  = 2 + `VX_CFG_EXT_TEX_ENABLED + `VX_CFG_EXT_RTU_ENABLED + `VX_CFG_EXT_DXA_ENABLED;
+
+    // Socket unit MMU ports (SOCKET_UNIT_MMU_ENABLE), in socket arb order.
+    localparam UMMU_TCACHE_IDX      = 0;
+    localparam UMMU_RTCACHE_IDX     = UMMU_TCACHE_IDX + `VX_CFG_EXT_TEX_ENABLED;
+    localparam UMMU_DXA_IDX         = UMMU_RTCACHE_IDX + `VX_CFG_EXT_RTU_ENABLED;
+    localparam UMMU_NUM_REQS        = `VX_CFG_EXT_TEX_ENABLED + `VX_CFG_EXT_RTU_ENABLED + `VX_CFG_EXT_DXA_ENABLED;
+
+    // Widest tag among the socket arb inputs (DXA adapts to the given budget)
+`ifdef VX_CFG_EXT_TEX_ENABLE
+    localparam SOCKET_MEM_TAG_W1    = `MAX(L1_MEM_TAG_WIDTH, TCACHE_MEM_TAG_WIDTH);
+`else
+    localparam SOCKET_MEM_TAG_W1    = L1_MEM_TAG_WIDTH;
+`endif
+`ifdef VX_CFG_EXT_RTU_ENABLE
+    localparam SOCKET_MEM_TAG_WIDTH = `MAX(SOCKET_MEM_TAG_W1, RTCACHE_MEM_TAG_WIDTH);
+`else
+    localparam SOCKET_MEM_TAG_WIDTH = SOCKET_MEM_TAG_W1;
+`endif
+    localparam SOCKET_MEM_ARB_TAG_WIDTH = (SOCKET_MEM_TAG_WIDTH + `CLOG2(SOCKET_MEM_ARB_REQS));
+
+    /////////////////////////////// L2 Parameters /////////////////////////////
+
+    // Word size in bytes
+    localparam L2_WORD_SIZE	        = `VX_CFG_L1_LINE_SIZE;
+
+    // Sector = mem transaction granule (= line when 1 sector/line)
+    localparam L2_SECTOR_SIZE       = `VX_CFG_L2_SECTOR_SIZE;
+
+    // Input request size — sockets (TEX/RTU/DXA traffic rides the socket ports)
+    localparam L2_SOCKET_REQS       = NUM_SOCKETS * L1_MEM_PORTS;
+
+    // Cluster-resident graphics caches add dedicated L2 input slots
+    localparam L2_GFX_REQS          = `VX_CFG_EXT_RASTER_ENABLED + `VX_CFG_EXT_OM_ENABLED;
+    localparam L2_GFX_RASTER_IDX    = L2_SOCKET_REQS;
+    localparam L2_GFX_OM_IDX        = L2_GFX_RASTER_IDX + `VX_CFG_EXT_RASTER_ENABLED;
+
+    // Cluster unit MMU ports (CLUSTER_UNIT_MMU_ENABLE), in L2 client order.
+    localparam CMMU_RCACHE_IDX      = 0;
+    localparam CMMU_OCACHE_IDX      = CMMU_RCACHE_IDX + `VX_CFG_EXT_RASTER_ENABLED;
+    localparam CMMU_NUM_REQS        = `VX_CFG_EXT_RASTER_ENABLED + `VX_CFG_EXT_OM_ENABLED;
+
+    // With one cluster, an L2 and no L3, that L2 is the LLC: the device
+    // walker's PTE fetches ride it through a dedicated client slot, so a
+    // leaf-PTE miss is a cache lookup rather than a DRAM round trip. In
+    // every other topology the walker attaches at the device (see L3_PTW_IDX).
+    localparam PTW_ON_L2            = ((`VX_CFG_VM_ENABLED != 0)
+                                    && (`VX_CFG_NUM_CLUSTERS == 1)
+                                    && (`VX_CFG_L2_ENABLED != 0)
+                                    && (`VX_CFG_L3_ENABLED == 0)) ? 1 : 0;
+    localparam L2_PTW_REQS          = PTW_ON_L2;
+    localparam L2_PTW_IDX           = L2_SOCKET_REQS + L2_GFX_REQS;
+
+    localparam L2_NUM_REQS          = L2_SOCKET_REQS + L2_GFX_REQS + L2_PTW_REQS;
+
+    // The command processor's DMA enters the shared LLC on one more client
+    // slot (VX_CFG_CP_ON_LLC): the cluster L2 when it is the LLC of a single
+    // cluster, the L3 otherwise. The slot does not size the banks, so
+    // L2_NUM_REQS / L3_NUM_REQS exclude it and *_CACHE_REQS count it.
+    localparam CP_ON_L2             = ((`VX_CFG_CP_ON_LLC != 0)
+                                    && (`VX_CFG_NUM_CLUSTERS == 1)
+                                    && (`VX_CFG_L2_ENABLED != 0)
+                                    && (`VX_CFG_L3_ENABLED == 0)) ? 1 : 0;
+    localparam CP_ON_L3             = ((`VX_CFG_CP_ON_LLC != 0) && (`VX_CFG_L3_ENABLED != 0)) ? 1 : 0;
+    localparam L2_CP_IDX            = L2_NUM_REQS;
+    localparam L2_CACHE_REQS        = L2_NUM_REQS + CP_ON_L2;
+
+    localparam L2_NUM_BANKS         = `VX_CFG_L2_NUM_BANKS;
+    localparam L2_MEM_PORTS         = `VX_CFG_L2_MEM_PORTS;
+
+    // Core request tag bits (socket arb output width)
+    localparam L2_TAG_WIDTH         = SOCKET_MEM_ARB_TAG_WIDTH;
+
+    // TLB miss/fill fabric id widths. The id starts as the L1 miss-station slot
+    // and each arb level prepends its grant index so fills route back exactly.
+    localparam L1_TLB_ID_WIDTH       = `CLOG2(`VX_CFG_L1_TLB_MSHR_SIZE);
+    // A socket exposes two L1 MMUs (dtlb + itlb), regardless of SOCKET_SIZE, plus
+    // the unit MMU when present, each driving one bus into the socket TLB arbiter.
+`ifdef SOCKET_UNIT_MMU_ENABLE
+    localparam SOCKET_NUM_MMUS       = 3;
+`else
+    localparam SOCKET_NUM_MMUS       = 2;
+`endif
+    localparam TLB_SOCKET_ID_WIDTH   = L1_TLB_ID_WIDTH + `ARB_SEL_BITS(SOCKET_NUM_MMUS, 1);
+    // The cluster TLB's clients: every socket, plus the cluster unit MMU.
+`ifdef CLUSTER_UNIT_MMU_ENABLE
+    localparam CLUSTER_NUM_TLB_PORTS = NUM_SOCKETS + 1;
+`else
+    localparam CLUSTER_NUM_TLB_PORTS = NUM_SOCKETS;
+`endif
+    localparam TLB_CLUSTER_ID_WIDTH  = TLB_SOCKET_ID_WIDTH + `ARB_SEL_BITS(CLUSTER_NUM_TLB_PORTS, 1);
+    localparam L2_TLB_SLOT_WIDTH     = `CLOG2(`VX_CFG_L2_TLB_MSHR_SIZE);
+    // Device-level walker: cluster L2-TLB miss buses arb into one walker.
+    localparam TLB_DEV_ID_WIDTH      = L2_TLB_SLOT_WIDTH + `ARB_SEL_BITS(`VX_CFG_NUM_CLUSTERS, 1);
+
+    // Memory request data bits (mem transacts in sectors)
+    localparam L2_MEM_DATA_WIDTH	= (L2_SECTOR_SIZE * 8);
+
+    // Memory request tag bits
+`ifdef VX_CFG_L2_ENABLE
+    localparam L2_MEM_TAG_WIDTH     = `CACHE_NC_MEM_TAG_WIDTH(`VX_CFG_L2_MSHR_SIZE, L2_NUM_BANKS, L2_CACHE_REQS, L2_MEM_PORTS, L2_SECTOR_SIZE, L2_WORD_SIZE, L2_TAG_WIDTH, UUID_WIDTH);
+`else
+    localparam L2_MEM_TAG_WIDTH     = `CACHE_BYPASS_TAG_WIDTH(L2_CACHE_REQS, L2_MEM_PORTS, L2_SECTOR_SIZE, L2_WORD_SIZE, L2_TAG_WIDTH);
+`endif
+
+    // L2 is the LLC iff L2 is enabled and L3 is not.
+    localparam L2_IS_LLC            = `VX_CFG_L2_ENABLED && !`VX_CFG_L3_ENABLED;
+    // Every memory client of a cluster reaches memory through its L2.
+    localparam L2_SHARED_LLC        = L2_IS_LLC && (`VX_CFG_NUM_CLUSTERS == 1);
+    // An acquire must also invalidate the cache below the dcache unless that
+    // one is the point of coherence (an L3 always is; memory always is).
+    localparam DCACHE_ACQ_FORWARD   = `VX_CFG_L2_ENABLED && !L2_SHARED_LLC;
+
+    /////////////////////////////// L3 Parameters /////////////////////////////
+
+    // Word size in bytes (= L2 mem transaction granule = L2 sector)
+    localparam L3_WORD_SIZE	        = L2_SECTOR_SIZE;
+
+    // Sector = mem transaction granule (= line when 1 sector/line)
+    localparam L3_SECTOR_SIZE       = `VX_CFG_L3_SECTOR_SIZE;
+
+    // Input request size
+    // The device-level walker attaches its PTE fetches as one more LLC
+    // client on the last requestor slot, unless a single cluster's L2 is
+    // the LLC (PTW_ON_L2) and carries them instead.
+    localparam L3_PTW_IDX           = `VX_CFG_NUM_CLUSTERS * L2_MEM_PORTS;
+    localparam L3_NUM_REQS	        = `VX_CFG_NUM_CLUSTERS * L2_MEM_PORTS
+                                    + ((`VX_CFG_VM_ENABLED != 0) && (PTW_ON_L2 == 0) ? 1 : 0);
+    localparam L3_CP_IDX            = L3_NUM_REQS;
+    localparam L3_CACHE_REQS        = L3_NUM_REQS + CP_ON_L3;
+    localparam L3_NUM_BANKS         = `VX_CFG_L3_NUM_BANKS;
+    localparam L3_MEM_PORTS         = `VX_CFG_L3_MEM_PORTS;
+
+    // Core request tag bits
+    localparam L3_TAG_WIDTH	        = L2_MEM_TAG_WIDTH;
+
+    // Memory request data bits (mem transacts in sectors)
+    localparam L3_MEM_DATA_WIDTH	= (L3_SECTOR_SIZE * 8);
+
+    // Memory request tag bits
+`ifdef VX_CFG_L3_ENABLE
+    localparam L3_MEM_TAG_WIDTH     = `CACHE_NC_MEM_TAG_WIDTH(`VX_CFG_L3_MSHR_SIZE, L3_NUM_BANKS, L3_CACHE_REQS, L3_MEM_PORTS, L3_SECTOR_SIZE, L3_WORD_SIZE, L3_TAG_WIDTH, UUID_WIDTH);
+`else
+    localparam L3_MEM_TAG_WIDTH     = `CACHE_BYPASS_TAG_WIDTH(L3_CACHE_REQS, L3_MEM_PORTS, L3_SECTOR_SIZE, L3_WORD_SIZE, L3_TAG_WIDTH);
+`endif
+    // L3 is the LLC whenever it is enabled.
+    localparam L3_IS_LLC            = `VX_CFG_L3_ENABLED;
+    localparam L3_SHARED_LLC        = L3_IS_LLC;
+
+    // CP DMA port into the LLC client slot: one LLC word per request. The
+    // slot tag carries the port's tag plus a fence marker.
+    localparam CP_MEM_DATA_SIZE     = (CP_ON_L2 != 0) ? L2_WORD_SIZE : L3_WORD_SIZE;
+    localparam CP_MEM_ADDR_WIDTH    = `VX_CFG_MEM_ADDR_WIDTH - `CLOG2(CP_MEM_DATA_SIZE);
+    localparam CP_SLOT_TAG_WIDTH    = (CP_ON_L2 != 0) ? L2_TAG_WIDTH : L3_TAG_WIDTH;
+    localparam CP_MEM_TAG_WIDTH     = CP_SLOT_TAG_WIDTH - UUID_WIDTH - 1;
+
+    ///////////////////////////////////////////////////////////////////////////
+
+    localparam VX_MEM_PORTS =           L3_MEM_PORTS;
+    localparam VX_MEM_BYTEEN_WIDTH =    L3_SECTOR_SIZE;
+    localparam VX_MEM_ADDR_WIDTH =      (`VX_CFG_MEM_ADDR_WIDTH - `CLOG2(L3_SECTOR_SIZE));
+    localparam VX_MEM_DATA_WIDTH =      (L3_SECTOR_SIZE * 8);
+    localparam VX_MEM_TAG_WIDTH =       L3_MEM_TAG_WIDTH;
+
+    ///////////////////////// Miscaellaneous functions ////////////////////////
+
+    function automatic logic [SFU_WIDTH-1:0] op_to_sfu_type(
+        input logic [INST_OP_BITS-1:0] op_type
+    );
+        case (op_type)
+            INST_SFU_CSRRW,
+            INST_SFU_CSRRS,
+            INST_SFU_CSRRC: op_to_sfu_type = SFU_CSRS;
+            default: op_to_sfu_type = SFU_WCTL;
+        endcase
+    endfunction
+
+    function automatic logic [NUM_REGS_BITS-1:0] make_reg_num(input logic [REG_TYPE_BITS-1:0] rtype, logic [RV_REGS_BITS-1:0] idx);
+        return (NUM_REGS_BITS'(rtype) << RV_REGS_BITS) | NUM_REGS_BITS'(idx);
+    endfunction
+
+    function automatic logic [REG_TYPE_BITS-1:0] get_reg_type(input logic [NUM_REGS_BITS-1:0] reg_num);
+        return REG_TYPE_BITS'(reg_num >> RV_REGS_BITS);
+    endfunction
+
+    function automatic logic [RV_REGS_BITS-1:0] get_reg_idx(input logic [NUM_REGS_BITS-1:0] reg_num);
+        return reg_num[RV_REGS_BITS-1:0];
+    endfunction
+
+    function automatic logic [UUID_WIDTH-1:0] get_uop_uuid(input logic [UUID_WIDTH-1:0] uuid, input logic [UOP_CTR_W-1:0] uop_idx);
+    `ifdef UUID_ENABLE
+        logic [31:0] uuid_lo = {uop_idx[0 +: UOP_CTR_W], uuid[0 +: (32 - UOP_CTR_W)]};
+        return {uuid[UUID_WIDTH-1:32], uuid_lo};
+    `else
+        return uuid;
+    `endif
+    endfunction
+
+endpackage
+
+`IGNORE_UNUSED_END
+
+`endif // VX_GPU_PKG_VH
