@@ -112,6 +112,17 @@
             ln -s ${rv32.binutils}/bin/riscv32-none-elf-$tool $out/bin/riscv32-unknown-elf-$tool
           done
         '';
+        # OpenTitan builds its software with Bazel, whose hermetic toolchains are dynamically linked
+        # programs and whose actions use /bin/bash and srec_cat: a FHS environment for them.
+        otFhs = pkgs.buildFHSEnv {
+          name = "otfhs";
+          targetPkgs = pk: with pk; [
+            bash coreutils gnugrep gnused gawk findutils diffutils gnutar gzip xz bzip2 unzip zip git
+            curl wget python3 gcc glibc zlib openssl libxcrypt-legacy ncurses libelf which file patch
+            perl rsync openjdk21_headless srecord
+          ];
+          runScript = "bash";
+        };
         # The wally testbench runs bin/extractFunctionRadix.sh, whose shebang is /bin/bash;
         # NixOS has no /bin/bash, so run it with bash from the shell.
         wallyShims = pkgs.writeShellScriptBin "extractFunctionRadix.sh" ''
@@ -120,6 +131,8 @@
       in
       {
         devShells.default = pkgs.mkShell {
+          # libelf, which the OpenTitan simulation links
+          buildInputs = [ pkgs.elfutils ];
           packages = with pkgs; [
             verilator
             slang
@@ -138,6 +151,7 @@
             rv32.gcc
             rv32.binutils
             riscv32Aliases
+            otFhs
             wallyShims
           ];
           # uv runs upstream scripts (elf2hex) with the Python above, never downloads one.
