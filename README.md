@@ -12,8 +12,11 @@ The release is a tarball. Tools pin it by hash.
 
 ## Designs
 
+<!-- designs:begin -->
 | Design | Variant | Upstream | Licence | Source |
 |---|---|---|---|---|
+| CORE-V Wally | rv64gc | [openhwfoundation/cvw](https://github.com/openhwfoundation/cvw) at `90259bdca99c` | Apache-2.0 WITH SHL-2.1 | vendored |
+<!-- designs:end -->
 
 Generated from `designs/*/design.toml` by `rtl-bench table`.
 
@@ -40,9 +43,11 @@ designs/<design>/
 
 ```
 nix develop
-rtl-bench check                 # schema, licences, file lists
+rtl-bench check                 # schema, licences, file lists, the Designs table
 rtl-bench sim <variant> <workload>
+rtl-bench elaborate <variant>   # slang on the synthesis view
 rtl-bench sdc <variant> --technology <name>
+rtl-bench table                 # regenerate the Designs table
 rtl-bench package               # release tarball
 ```
 
