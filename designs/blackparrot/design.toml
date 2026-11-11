@@ -1,0 +1,156 @@
+[design]
+id = "blackparrot"
+name = "BlackParrot"
+description = "Linux-capable RISC-V multicore with a coherent cache system, in SystemVerilog."
+
+[source]
+repository = "https://github.com/black-parrot/black-parrot"
+commit = "909619a68f3541a4cd0973767daf2a561d1f8c95"
+mode = "vendored"
+licence = "BSD-3-Clause"
+licence_files = ["src/LICENSE"]
+
+# The submodules that upstream's file list (bp_top/flist.vcs) takes files from, at the commits that
+# the pinned commit records. The fourth, external/bedrock, holds the assembler of the CCE microcode;
+# no file list of the unicore variant uses it.
+[[source.dependency]]
+repository = "https://github.com/bespoke-silicon-group/basejump_stl"
+commit = "c9710312482ddd725e14b26eafdcbf3c629dc14c"
+licence = "SHL-0.51"
+licence_files = ["src/external/basejump_stl/LICENSE", "licences/SHL-0.51.txt"]
+
+[[source.dependency]]
+repository = "https://github.com/bsg-external/HardFloat"
+commit = "5b7d5fe2df7e297b5ba095b3eb8a9517dc2e9d88"
+licence = "BSD-3-Clause"
+licence_files = ["src/external/HardFloat/COPYING.txt"]
+
+[[variant]]
+id = "unicore"
+description = "One core with its L1 caches and a UCE, no coherence network; configuration e_bp_unicore_cfg."
+
+# Synthesis top: wrapper (bp_top/test/tb/bp_tethered/wrapper.sv), the module that upstream's dc flow
+# (mk/Makefile.dc, check_design.dc: DESIGN_NAME ?= wrapper) and its sv2v flow take as the top. It
+# instantiates bp_processor with the configuration bp_params_p = BP_CFG_FLOWVAR, which upstream's flow
+# passes as +define+BP_CFG_FLOWVAR=<cfg>. The file list is bp_top/flist.vcs plus the wrapper, as the dc
+# flow builds it. See recipe/README.md.
+[variant.synth]
+top = "wrapper"
+language = "sv-2017"
+files = "variants/unicore/synth.f"
+include_dirs = [
+  "src/bp_be/src/include",
+  "src/bp_common/src/include",
+  "src/bp_common/test/common",
+  "src/bp_fe/src/include",
+  "src/bp_me/src/include",
+  "src/bp_top/src/include",
+  "src/external/HardFloat/source",
+  "src/external/HardFloat/source/RISCV",
+  "src/external/basejump_stl/bsg_cache",
+  "src/external/basejump_stl/bsg_dataflow",
+  "src/external/basejump_stl/bsg_mem",
+  "src/external/basejump_stl/bsg_misc",
+  "src/external/basejump_stl/bsg_noc",
+  "src/external/basejump_stl/bsg_tag",
+  "src/external/basejump_stl/bsg_test",
+]
+defines = { BP_CFG_FLOWVAR = "e_bp_unicore_cfg" }
+# The memories of BaseJump STL that the design instantiates. Each wrapper instantiates its behavioural
+# model (the _synth module); a process replaces the wrapper by a hard macro, which this repository does
+# not do.
+macros = [
+  { module = "bsg_mem_1rw_sync", model = "src/external/basejump_stl/bsg_mem/bsg_mem_1rw_sync_synth.sv" },
+  { module = "bsg_mem_1r1w", model = "src/external/basejump_stl/bsg_mem/bsg_mem_1r1w_synth.sv" },
+  { module = "bsg_mem_1r1w_sync", model = "src/external/basejump_stl/bsg_mem/bsg_mem_1r1w_sync_synth.sv" },
+  { module = "bsg_mem_2r1w_sync", model = "src/external/basejump_stl/bsg_mem/bsg_mem_2r1w_sync_synth.sv" },
+  { module = "bsg_mem_3r1w_sync", model = "src/external/basejump_stl/bsg_mem/bsg_mem_3r1w_sync_synth.sv" },
+  { module = "bsg_mem_1rw_sync_mask_write_bit", model = "src/external/basejump_stl/bsg_mem/bsg_mem_1rw_sync_mask_write_bit_synth.sv" },
+  { module = "bsg_mem_1rw_sync_mask_write_byte", model = "src/external/basejump_stl/bsg_mem/bsg_mem_1rw_sync_mask_write_byte_synth.sv" },
+]
+
+# No period and no I/O delays until the technology policy is decided. The wrapper has one clock
+# input; bp_processor derives its real-time clock from it.
+[[variant.clock]]
+name = "core_clk"
+port = "clk_i"
+
+[variant.constraints]
+resets = ["reset_i"]
+
+# Simulation: upstream's Verilator testbench bp_top/test/tb/bp_tethered, built as
+# mk/Makefile.verilator builds it (build.verilator) and run as sim.verilator runs it.
+[variant.sim]
+simulator = "verilator"
+top = "testbench"
+files = "variants/unicore/sim.f"
+# The options of mk/Makefile.verilator; the waiver file first, as the Makefile gives it. --Wno-fatal
+# --Wno-lint --Wno-style -Wno-UNOPTFLAT: lint warnings of the upstream sources do not stop the build.
+verilator_flags = [
+  "src/bp_top/verilator/waiver.vlt",
+  "-O2", "--x-assign", "fast", "--x-initial", "fast",
+  "--timescale", "1ps/1ps", "--autoflush", "--no-assert",
+  "--Wno-fatal", "--Wno-lint", "--Wno-style", "-Wno-UNOPTFLAT",
+]
+cycles_pattern = 'clk\s*:\s*([0-9]+)'
+cycles_file = "perf_0.trace"
+defines = { BSG_NO_TIMESCALE = "1" }
+dut = "testbench.wrapper"
+support = ["src/bp_top/verilator/waiver.vlt"]
+# upstream's Makefile.collateral: prog.riscv -> prog.bin -> prog.mem, then +elf_file and +init_mem
+prepare = [
+  ["riscv64-unknown-elf-objcopy", "-I", "elf64-little", "{image}", "-O", "binary", "{dir}/prog.bin"],
+  ["riscv64-unknown-elf-objcopy", "-I", "binary", "{dir}/prog.bin", "-O", "verilog", "{dir}/prog.mem"],
+]
+args = ["+elf_file={image}", "+init_mem={dir}/prog.mem"]
+
+# The parameters that mk/Makefile.verilator and the Makefile.params of the testbench pass (-pvalue+) with
+# their default values.
+[variant.sim.parameters]
+perf_enable_p = "1"
+warmup_instr_p = "0"
+max_instr_p = "10000000"
+max_cycle_p = "10000000"
+watchdog_enable_p = "1"
+stall_cycles_p = "100000"
+halt_instr_p = "1000"
+heartbeat_instr_p = "10000"
+cosim_trace_p = "0"
+cosim_check_p = "0"
+sim_clock_period_p = "10"
+sim_reset_cycles_lo_p = "0"
+sim_reset_cycles_hi_p = "20"
+tb_clock_period_p = "2"
+tb_reset_cycles_lo_p = "0"
+tb_reset_cycles_hi_p = "50"
+
+# demo.riscv is prebuilt by upstream and kept in the repository. The programs under sim/ are built by
+# recipe/build-workloads.sh from black-parrot-sdk. max_cycles is a limit, about ten times the cycles
+# that `rtl-bench sim` printed for the workload (the perf counter of the testbench: clk in perf_0.trace).
+[[variant.sim.workload]]
+id = "demo"
+image = "src/bp_top/test/tb/bp_tethered/demo.riscv"
+pass = { kind = "stdout", contains = "[BSG-PASS]" }
+max_cycles = 40000
+
+# riscv-tests, as ci/sim-riscv-tests.sh runs them (rv64ui-p-simple is the example of docs/eval_guide.md).
+[[variant.sim.workload]]
+id = "rv64ui-p-simple"
+image = "sim/rv64ui-p-simple.riscv"
+pass = { kind = "stdout", contains = "[BSG-PASS]" }
+max_cycles = 20000
+
+[[variant.sim.workload]]
+id = "rv64ui-p-add"
+image = "sim/rv64ui-p-add.riscv"
+pass = { kind = "stdout", contains = "[BSG-PASS]" }
+max_cycles = 30000
+
+# CoreMark, 10 iterations, as ci/sim-coremark.sh runs it. The timed region runs from start_time to
+# stop_time (core_portme.c of the CoreMark port).
+[[variant.sim.workload]]
+id = "coremark"
+image = "sim/coremark.riscv"
+pass = { kind = "stdout", contains = "Correct operation validated." }
+max_cycles = 30000000
+activity = { start = "start_time", stop = "stop_time" }

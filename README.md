@@ -15,6 +15,7 @@ The release is a tarball. Tools pin it by hash.
 <!-- designs:begin -->
 | Design | Variant | Upstream | Licence | Source |
 |---|---|---|---|---|
+| BlackParrot | unicore | [black-parrot/black-parrot](https://github.com/black-parrot/black-parrot) at `909619a68f35` | BSD-3-Clause | vendored |
 | CORE-V Wally | rv64gc | [openhwfoundation/cvw](https://github.com/openhwfoundation/cvw) at `90259bdca99c` | (Apache-2.0 WITH SHL-2.1) AND MIT | vendored |
 <!-- designs:end -->
 
