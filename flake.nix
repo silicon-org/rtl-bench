@@ -152,6 +152,12 @@
             rv32.binutils
             riscv32Aliases
             otFhs
+            # Chipyard's generation flow (JDK 17: the Scala 2.12 of sbt cannot read newer class files)
+            jdk17
+            dtc
+            perl
+            gawk
+            which
             wallyShims
           ];
           # uv runs upstream scripts (elf2hex) with the Python above, never downloads one.
@@ -160,6 +166,8 @@
           RISCV_EMPTY_CRT = "${emptyCrt}";
           VX_SOFTFLOAT = "${vxSoftfloat}";
           VX_RAMULATOR = "${vxRamulator}";
+          # libfesvr and libriscv (Spike) for the Chipyard simulator
+          CY_SPIKE = "${pkgs.spike}";
         };
       });
 }
