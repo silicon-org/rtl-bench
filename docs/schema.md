@@ -32,6 +32,7 @@ language = "sv-2017"                     # sv-2017 | verilog-2005
 files = "variants/unicore/synth.f"       # one path per line (blank lines and # comments allowed), in compilation order
 include_dirs = ["src/bp_common/src/include"]
 defines = { BP_CFG = "e_bp_unicore_cfg" }
+slang_flags = []                         # further slang options of `rtl-bench elaborate`, with the reason in a comment
 single_unit = false                      # true: one compilation unit for slang, so listed include files apply to the files after them
 parameters = { }                         # top-level parameter overrides
 # Memories kept as macros: the module name pattern and the behavioural model that simulation uses.

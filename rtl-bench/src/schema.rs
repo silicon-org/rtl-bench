@@ -101,6 +101,9 @@ pub struct Synth {
     /// that use its macros applies to them (slang `--single-unit`).
     #[serde(default)]
     pub single_unit: bool,
+    /// Further slang options for `rtl-bench elaborate`, with the reason in a comment.
+    #[serde(default)]
+    pub slang_flags: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]

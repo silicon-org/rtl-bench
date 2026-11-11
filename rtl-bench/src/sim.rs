@@ -343,6 +343,7 @@ pub fn elaborate(root: &Path, full_id: &str) -> Result<bool, String> {
     if v.synth.single_unit {
         cmd.arg("--single-unit");
     }
+    cmd.args(&v.synth.slang_flags);
     if v.synth.language == crate::schema::Language::Sv2017 {
         cmd.args(["--std", "1800-2017"]);
     }
