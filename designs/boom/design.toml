@@ -1,0 +1,180 @@
+[design]
+id = "boom"
+name = "SonicBOOM"
+description = "Out-of-order RISC-V core (SmallBoom) in the Chipyard SoC, as Chisel generates it."
+
+[source]
+repository = "https://github.com/ucb-bar/chipyard"
+commit = "157dd69e49b9866be2bf8db390ee78bc38cd4438"
+mode = "vendored"
+licence = "BSD-3-Clause AND Apache-2.0 AND BSD-2-Clause"
+licence_files = ["licences/chipyard/LICENSE", "licences/chipyard/LICENSE.SiFive"]
+
+# The repositories whose code is in the generated RTL (the source locators of the Verilog name their
+# files: boom, rocket-chip, the Chisel library, diplomacy, inclusive-cache, testchipip, hardfloat,
+# chipyard, rocket-chip-blocks). The commits are those of the submodules of the Chipyard tag.
+
+# SonicBOOM: its Scala generators, whose output is the core.
+[[source.dependency]]
+repository = "https://github.com/riscv-boom/riscv-boom"
+commit = "ba03175e0a3cf5c0d5a7f14d385ac1c8998c4428"
+licence = "BSD-3-Clause AND Apache-2.0"
+licence_files = ["licences/boom/LICENSE", "licences/boom/LICENSE.SiFive"]
+
+[[source.dependency]]
+repository = "https://github.com/chipsalliance/rocket-chip"
+commit = "ece7b9ad544b07df39cd13b6fd7236562a26355d"
+licence = "BSD-3-Clause AND Apache-2.0"
+licence_files = ["licences/rocket-chip/LICENSE.Berkeley", "licences/rocket-chip/LICENSE.jtag", "licences/rocket-chip/LICENSE.SiFive"]
+
+[[source.dependency]]
+repository = "https://github.com/ucb-bar/berkeley-hardfloat"
+commit = "0ecaef097ce2accbd16a61613699450ed5533f29"
+licence = "BSD-3-Clause"
+licence_files = ["licences/hardfloat/LICENSE"]
+
+[[source.dependency]]
+repository = "https://github.com/ucb-bar/testchipip"
+commit = "555ff3fbc12f81a8feff7a4801930fb384ddd2ae"
+licence = "BSD-3-Clause"
+licence_files = ["licences/testchipip/LICENSE"]
+
+[[source.dependency]]
+repository = "https://github.com/chipsalliance/rocket-chip-blocks"
+commit = "f8c7fddbd7639b15fefc968af59fcc4a8f7df73b"
+licence = "Apache-2.0"
+licence_files = ["licences/rocket-chip-blocks/LICENSE"]
+
+[[source.dependency]]
+repository = "https://github.com/chipsalliance/rocket-chip-inclusive-cache"
+commit = "27df9284e60136a6f7f1b19224dfbe99d112ea77"
+licence = "Apache-2.0"
+licence_files = ["licences/rocket-chip-inclusive-cache/LICENSE"]
+
+[[source.dependency]]
+repository = "https://github.com/chipsalliance/diplomacy"
+commit = "fe5e131d4fc8adec14a3ce4a4935bb5c0a269871"
+licence = "Apache-2.0"
+licence_files = ["licences/diplomacy/LICENSE.SiFive"]
+
+# Chisel 6.7.0 (tag v6.7.0): the library modules (Queue, Arbiter, ...) in the output.
+[[source.dependency]]
+repository = "https://github.com/chipsalliance/chisel"
+commit = "8db8c1e063c22440c6fcbc61ea7e8923a969ad15"
+licence = "Apache-2.0"
+licence_files = ["licences/chisel/LICENSE"]
+
+# Compiled into the simulator only (tools/DRAMSim2, as Chipyard builds it, without TraceBasedSim.cpp, its main).
+[[source.dependency]]
+repository = "https://github.com/firesim/DRAMSim2"
+commit = "44322e2f935d7dac83b7adf8dd270b41a54c6acb"
+licence = "BSD-2-Clause"
+licence_files = ["src/DRAMSim2/Bank.cpp"]
+
+[[variant]]
+id = "smallv3"
+description = "One SmallBoomV3 core: chipyard.SmallBoomV3Config (WithNSmallBooms(1) ++ AbstractConfig) on the TestHarness."
+
+# Synthesis top: ChipTop, the chip of the Chipyard flow (its VLSI flow, vlsi/, takes ChipTop; the
+# TestHarness is the testbench around it). The Verilog is generated, once, by Chipyard's own flow: see
+# recipe/generate.sh and recipe/README.md. The file list is the module list of ChipTop that the flow
+# writes (top.f), the black boxes of the DUT (clock gate, IO cells, plusarg reader) and the memories.
+[variant.synth]
+top = "ChipTop"
+language = "sv-2017"
+files = "variants/smallv3/synth.f"
+include_dirs = ["src/generated"]
+defines = { SYNTHESIS = "1" }
+# Some of the generated files (the black boxes) have a `timescale and the others do not.
+slang_flags = ["--timescale=1ns/1ps"]
+# The memories of the chip as Chipyard writes them for the simulation and as the VLSI flow would
+# replace them by SRAM macros: the *_ext modules of the MacroCompiler (--mode synflops, flop arrays
+# with the ports of the macros; the 20 memories of the .top.mems.conf of the run).
+macros = [
+  { module = "cc_dir_ext", model = "src/generated/chipyard.harness.TestHarness.SmallBoomV3Config.top.mems.v" },
+  { module = "cc_banks_0_ext", model = "src/generated/chipyard.harness.TestHarness.SmallBoomV3Config.top.mems.v" },
+  { module = "tag_array_ext", model = "src/generated/chipyard.harness.TestHarness.SmallBoomV3Config.top.mems.v" },
+  { module = "array_0_0_0_ext", model = "src/generated/chipyard.harness.TestHarness.SmallBoomV3Config.top.mems.v" },
+  { module = "tag_array_0_ext", model = "src/generated/chipyard.harness.TestHarness.SmallBoomV3Config.top.mems.v" },
+  { module = "dataArrayWay_0_ext", model = "src/generated/chipyard.harness.TestHarness.SmallBoomV3Config.top.mems.v" },
+  { module = "hi_us_ext", model = "src/generated/chipyard.harness.TestHarness.SmallBoomV3Config.top.mems.v" },
+  { module = "table_ext", model = "src/generated/chipyard.harness.TestHarness.SmallBoomV3Config.top.mems.v" },
+  { module = "hi_us_0_ext", model = "src/generated/chipyard.harness.TestHarness.SmallBoomV3Config.top.mems.v" },
+  { module = "table_0_ext", model = "src/generated/chipyard.harness.TestHarness.SmallBoomV3Config.top.mems.v" },
+  { module = "table_1_ext", model = "src/generated/chipyard.harness.TestHarness.SmallBoomV3Config.top.mems.v" },
+  { module = "meta_0_ext", model = "src/generated/chipyard.harness.TestHarness.SmallBoomV3Config.top.mems.v" },
+  { module = "btb_0_ext", model = "src/generated/chipyard.harness.TestHarness.SmallBoomV3Config.top.mems.v" },
+  { module = "ebtb_ext", model = "src/generated/chipyard.harness.TestHarness.SmallBoomV3Config.top.mems.v" },
+  { module = "data_ext", model = "src/generated/chipyard.harness.TestHarness.SmallBoomV3Config.top.mems.v" },
+  { module = "meta_0_0_ext", model = "src/generated/chipyard.harness.TestHarness.SmallBoomV3Config.top.mems.v" },
+  { module = "ghist_0_ext", model = "src/generated/chipyard.harness.TestHarness.SmallBoomV3Config.top.mems.v" },
+  { module = "rob_debug_inst_mem_0_ext", model = "src/generated/chipyard.harness.TestHarness.SmallBoomV3Config.top.mems.v" },
+  { module = "l2_tlb_ram_0_ext", model = "src/generated/chipyard.harness.TestHarness.SmallBoomV3Config.top.mems.v" },
+  { module = "mem_ext", model = "src/generated/chipyard.harness.TestHarness.SmallBoomV3Config.top.mems.v" },
+]
+
+# No period and no I/O delays. ChipTop has the clock inputs clock_uncore (the SoC and the core), jtag_TCK and
+# serial_tl_0_clock_in; reset_io is the reset.
+[[variant.clock]]
+name = "uncore_clk"
+port = "clock_uncore"
+
+[[variant.clock]]
+name = "jtag_tck"
+port = "jtag_TCK"
+
+[[variant.clock]]
+name = "serial_tl_clk"
+port = "serial_tl_0_clock_in"
+
+[variant.constraints]
+resets = ["reset_io"]
+
+# Simulation: Chipyard's Verilator build (sims/verilator, make verilog and the command that make -n
+# shows for the simulator), with the files of the same run: TestDriver, the TestHarness, the DPI models
+# (SimDRAM, SimTSI, SimJTAG, SimUART and the host code of testchipip) and DRAMSim2. libfesvr and libriscv
+# are Spike's (the nix shell: CY_SPIKE).
+[variant.sim]
+simulator = "verilator"
+top = "TestDriver"
+standalone = true
+files = "variants/smallv3/sim.f"
+include_dirs = ["src/generated", "src/DRAMSim2"]
+undefine = ["SYNTHESIS"]
+defines = { CLOCK_PERIOD = "1.0", RESET_DELAY = "777.7", PRINTF_COND = "TestDriver.printf_cond", STOP_COND = "!TestDriver.reset", MODEL = "TestHarness", RANDOMIZE_MEM_INIT = "", RANDOMIZE_REG_INIT = "", RANDOMIZE_GARBAGE_ASSIGN = "", RANDOMIZE_INVALID_ASSIGN = "", VERILATOR = "" }
+verilator_flags = [
+  "--exe", "--main", "--timing", "--vpi", "--threads", "1", "--threads-dpi", "all", "-O3",
+  "--x-assign", "fast", "--x-initial", "fast", "--output-split", "10000", "--output-split-cfuncs", "100",
+  "--assert", "-Wno-fatal", "--timescale", "1ns/1ps", "--max-num-width", "1048576",
+  "-CFLAGS", "-O3 -std=c++17 -DVERILATOR -I${CY_SPIKE}/include -I${DESIGN_DIR}/src/DRAMSim2 -I${DESIGN_DIR}/src/generated",
+  "-LDFLAGS", "-L${CY_SPIKE}/lib -Wl,-rpath,${CY_SPIKE}/lib -lriscv -lfesvr",
+]
+dut = "TestDriver.testHarness.chiptop0"
+# the arguments of Chipyard's run-binary: +permissive <sim flags> +verbose +permissive-off <binary>;
+# +verbose makes the TestDriver print "*** PASSED *** Completed after N simulation cycles"
+cycles_pattern = 'Completed after +([0-9]+) simulation cycles'
+args = ["+permissive", "+max-cycles=50000000", "+verbose", "+permissive-off", "{image}"]
+
+# max_cycles: about ten times the cycles that `rtl-bench sim` printed. The cycles are those of the whole
+# simulation, which includes the 3 M cycles that the serial link needs to load the program
+# (dhrystone reports mcycle = 307579 and minstret = 295549 for the run itself).
+[[variant.sim.workload]]
+id = "rv64ui-p-simple"
+image = "sim/rv64ui-p-simple"
+pass = { kind = "stdout", contains = "*** PASSED ***" }
+max_cycles = 400000
+timeout_s = 600
+
+[[variant.sim.workload]]
+id = "rv64ui-p-add"
+image = "sim/rv64ui-p-add"
+pass = { kind = "stdout", contains = "*** PASSED ***" }
+max_cycles = 1000000
+timeout_s = 600
+
+[[variant.sim.workload]]
+id = "dhrystone"
+image = "sim/dhrystone.riscv"
+pass = { kind = "stdout", contains = "*** PASSED ***" }
+max_cycles = 32000000
+timeout_s = 1800
