@@ -157,6 +157,12 @@ pub struct Sim {
     /// Extra Verilator options for this variant.
     #[serde(default)]
     pub verilator_flags: Vec<String>,
+    /// Names of synthesis defines that the simulation does not inherit.
+    #[serde(default)]
+    pub undefine: Vec<String>,
+    /// Include directories of the simulation, after those of the synthesis view.
+    #[serde(default)]
+    pub include_dirs: Vec<String>,
     /// Synthesis files that the simulation leaves out.
     #[serde(default)]
     pub exclude: Vec<String>,
@@ -195,7 +201,8 @@ pub struct Workload {
     #[serde(default)]
     pub sources: Vec<String>,
     pub pass: Pass,
-    pub max_cycles: u64,
+    /// Limit of the cycle count; without it the count is not read.
+    pub max_cycles: Option<u64>,
     pub activity: Option<Activity>,
 }
 

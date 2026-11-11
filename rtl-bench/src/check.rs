@@ -249,6 +249,20 @@ pub fn check_design(l: &Loaded) -> Vec<String> {
                 );
             }
         }
+        for (i, n) in sim.undefine.iter().enumerate() {
+            if !v.synth.defines.contains_key(n) {
+                e.add(
+                    &format!("{mk}.undefine[{i}]"),
+                    format!("`{n}` is not a define of the synthesis view"),
+                );
+            }
+        }
+        for (i, d) in sim.include_dirs.iter().enumerate() {
+            let k = format!("{mk}.include_dirs[{i}]");
+            if path_ok(&mut e, &k, d) && !dir.join(d).is_dir() {
+                e.add(&k, format!("`{d}` is not a directory"));
+            }
+        }
         for (i, s) in sim.support.iter().enumerate() {
             exists(&mut e, dir, &format!("{mk}.support[{i}]"), s, &mut listed);
         }
@@ -317,7 +331,7 @@ pub fn check_design(l: &Loaded) -> Vec<String> {
             for (i, s) in w.sources.iter().enumerate() {
                 exists(&mut e, dir, &format!("{wk}.sources[{i}]"), s, &mut listed);
             }
-            if w.max_cycles == 0 {
+            if w.max_cycles == Some(0) {
                 e.add(&format!("{wk}.max_cycles"), "must be above 0");
             }
             match &w.pass {
@@ -878,6 +892,29 @@ max_cycles = 100
                 .any(|m| m.contains("workload[0].image") && m.contains("without `..`")),
             "{errs:?}"
         );
+    }
+
+    #[test]
+    fn undefine_must_name_a_synthesis_define() {
+        let t = good();
+        edit(
+            &t,
+            "dut = \"tb.dut\"",
+            "dut = \"tb.dut\"\nundefine = [\"NOPE\"]",
+        );
+        let errs = run(&t);
+        assert!(
+            errs.iter()
+                .any(|m| m.contains("sim.undefine[0]") && m.contains("not a define")),
+            "{errs:?}"
+        );
+    }
+
+    #[test]
+    fn max_cycles_is_optional() {
+        let t = good();
+        edit(&t, "max_cycles = 100\n", "");
+        assert_eq!(run(&t), Vec::<String>::new());
     }
 
     #[test]

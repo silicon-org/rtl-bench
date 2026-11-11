@@ -54,9 +54,13 @@ sdc = []                                 # upstream SDC files, unmodified, if an
 simulator = "verilator"
 top = "testbench"
 files = "variants/unicore/sim.f"         # testbench files; the synthesis files are added first
-verilator_flags = []                     # Verilator options of this variant (a .vlt file goes here, before the sources), with the reason in a comment
+verilator_flags = []                     # Verilator options of this variant (a .vlt file goes here, before the sources), with the reason in a comment;
+                                         # ${NAME} is replaced by an environment variable and ${DESIGN_DIR} by the absolute design directory;
+                                         # --exe: the design has its own C++ main (built with --cc --build instead of --binary)
+include_dirs = []                        # include directories of the simulation, after those of the synthesis view
+undefine = []                            # names of synthesis defines that the simulation does not inherit
 exclude = []                             # synthesis files that the simulation leaves out (a generated synthesis wrapper)
-defines = { }
+defines = { }                            # value "" defines a macro without a value
 parameters = { }                         # parameter overrides of the simulation top
 dut = "testbench.wrapper.dut"            # instance path of the synthesis top
 support = []                             # files needed at run time: scripts, makefiles, headers
@@ -72,7 +76,7 @@ id = "coremark"
 image = "sim/coremark.riscv"             # prebuilt, with the recipe in recipe/
 sources = ["src/coremark/core_main.c"]   # upstream files that the image is built from (optional)
 pass = { kind = "exit_code", value = 0 } # see below
-max_cycles = 20000000
+max_cycles = 20000000                    # optional: a limit for the cycle count; without it the count is not read
 activity = { start = "roi_begin", stop = "roi_end" }   # markers for switching activity, optional
 ```
 

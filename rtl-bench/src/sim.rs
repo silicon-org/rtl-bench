@@ -42,6 +42,41 @@ fn newest(dir: &Path, v: &Variant, files: &[String]) -> Result<SystemTime, Strin
     Ok(best)
 }
 
+/// The defines of the simulation: those of the synthesis view, minus `undefine`, plus its own.
+pub fn sim_defines(v: &Variant) -> Vec<(&String, &String)> {
+    v.synth
+        .defines
+        .iter()
+        .filter(|(k, _)| !v.sim.undefine.contains(k))
+        .chain(&v.sim.defines)
+        .collect()
+}
+
+/// Replace `${NAME}` by the environment variable NAME, and `${DESIGN_DIR}` by the absolute
+/// directory of the design; an unset variable is an error.
+pub fn expand_env(s: &str, design_dir: &Path) -> Result<String, String> {
+    let mut out = String::new();
+    let mut rest = s;
+    while let Some(i) = rest.find("${") {
+        out.push_str(&rest[..i]);
+        let tail = &rest[i + 2..];
+        let end = tail
+            .find('}')
+            .ok_or_else(|| format!("`{s}`: `${{` without `}}`"))?;
+        let name = &tail[..end];
+        let val = if name == "DESIGN_DIR" {
+            design_dir.to_string_lossy().into_owned()
+        } else {
+            std::env::var(name)
+                .map_err(|_| format!("`{s}`: the environment variable {name} is not set"))?
+        };
+        out.push_str(&val);
+        rest = &tail[end + 1..];
+    }
+    out.push_str(rest);
+    Ok(out)
+}
+
 /// Build the simulation view with Verilator. Returns the path of the executable.
 pub fn build(root: &Path, l: &Loaded, v: &Variant, full_id: &str) -> Result<PathBuf, String> {
     let files = sim_files(&l.dir, v)?;
@@ -56,9 +91,16 @@ pub fn build(root: &Path, l: &Loaded, v: &Variant, full_id: &str) -> Result<Path
         }
     }
     fs::create_dir_all(&mdir).map_err(|e| format!("{}: {e}", mdir.display()))?;
+    // A design with its own C++ main (--exe in the flags) is built with --cc --build.
+    let own_main = v.sim.verilator_flags.iter().any(|f| f == "--exe");
     let mut cmd = Command::new("verilator");
     cmd.current_dir(&l.dir)
-        .args(["--binary", "-j", &jobs()])
+        .args(if own_main {
+            ["--cc", "--build"]
+        } else {
+            ["--binary", "--timing"]
+        })
+        .args(["-j", &jobs()])
         .args([
             "--language",
             if v.synth.language == crate::schema::Language::Sv2017 {
@@ -78,16 +120,22 @@ pub fn build(root: &Path, l: &Loaded, v: &Variant, full_id: &str) -> Result<Path
             "--MAKEFLAGS",
             "OPT_GLOBAL=-O2",
         ]);
-    for d in &v.synth.include_dirs {
+    for d in v.synth.include_dirs.iter().chain(&v.sim.include_dirs) {
         cmd.arg(format!("-I{d}"));
     }
-    for (k, val) in v.synth.defines.iter().chain(&v.sim.defines) {
-        cmd.arg(format!("+define+{k}={val}"));
+    for (k, val) in sim_defines(v) {
+        cmd.arg(if val.is_empty() {
+            format!("+define+{k}")
+        } else {
+            format!("+define+{k}={val}")
+        });
     }
     for (k, val) in &v.sim.parameters {
         cmd.arg(format!("-G{k}={val}"));
     }
-    cmd.args(&v.sim.verilator_flags);
+    for f in &v.sim.verilator_flags {
+        cmd.arg(expand_env(f, &l.dir)?);
+    }
     cmd.args(&files);
     eprintln!(
         "building {full_id} with verilator ({} files, -j {})",
@@ -221,7 +269,7 @@ pub fn run_workload(root: &Path, full_id: &str, workload: &str) -> Result<Outcom
 
     let mut result = check_pass(&w.pass, status.code(), &output);
     let mut summary = format!("{full_id} {}: run time {seconds:.2} s", w.id);
-    if let (Ok(()), Some(p)) = (&result, &v.sim.cycles_pattern) {
+    if let (Ok(()), Some(p), Some(max)) = (&result, &v.sim.cycles_pattern, w.max_cycles) {
         let text = match &v.sim.cycles_file {
             Some(f) => {
                 fs::read_to_string(run_dir.join(f)).map_err(|e| format!("cycles_file {f}: {e}"))
@@ -229,9 +277,7 @@ pub fn run_workload(root: &Path, full_id: &str, workload: &str) -> Result<Outcom
             None => Ok(output.clone()),
         };
         match text.and_then(|t| find_cycles(p, &t)) {
-            Ok(c) if c > w.max_cycles => {
-                result = Err(format!("{c} cycles, above max_cycles {}", w.max_cycles))
-            }
+            Ok(c) if c > max => result = Err(format!("{c} cycles, above max_cycles {max}")),
             Ok(c) => summary += &format!(", {c} cycles"),
             Err(m) => result = Err(m),
         }
@@ -262,7 +308,14 @@ pub fn elaborate(root: &Path, full_id: &str) -> Result<bool, String> {
         cmd.args(["-I", d]);
     }
     for (k, val) in &v.synth.defines {
-        cmd.args(["-D", &format!("{k}={val}")]);
+        cmd.args([
+            "-D".to_string(),
+            if val.is_empty() {
+                k.clone()
+            } else {
+                format!("{k}={val}")
+            },
+        ]);
     }
     for (k, val) in &v.synth.parameters {
         cmd.args(["-G", &format!("{k}={val}")]);
@@ -275,6 +328,27 @@ pub fn elaborate(root: &Path, full_id: &str) -> Result<bool, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn env_variables_are_expanded() {
+        std::env::set_var("RTL_BENCH_TEST_VAR", "/x");
+        assert_eq!(
+            expand_env("-L${RTL_BENCH_TEST_VAR}/lib", Path::new("/d")),
+            Ok("-L/x/lib".to_string())
+        );
+        assert_eq!(
+            expand_env("plain", Path::new("/d")),
+            Ok("plain".to_string())
+        );
+        let err = expand_env("${RTL_BENCH_NOT_SET_AT_ALL}", Path::new("/d")).unwrap_err();
+        assert!(
+            err.contains("RTL_BENCH_NOT_SET_AT_ALL") && err.contains("not set"),
+            "{err}"
+        );
+        assert!(expand_env("${open", Path::new("/d"))
+            .unwrap_err()
+            .contains("without"));
+    }
 
     #[test]
     fn exit_code_check() {
