@@ -54,6 +54,7 @@ sdc = []                                 # upstream SDC files, unmodified, if an
 simulator = "verilator"
 top = "testbench"
 files = "variants/unicore/sim.f"         # testbench files; the synthesis files are added first
+verilator_flags = []                     # extra Verilator options of this variant, with the reason in a comment
 exclude = []                             # synthesis files that the simulation leaves out (a generated synthesis wrapper)
 defines = { }
 parameters = { }                         # parameter overrides of the simulation top
@@ -88,6 +89,6 @@ With `cycles_pattern`, `rtl-bench sim` also reads the cycle count from the outpu
 
 - Every listed file exists; every path is relative to the design directory and stays inside it.
 - Every file under `src/` is listed by some view or by `recipe/unused.txt` (`<path> <reason>` per line). A view lists a file by its file lists, `macros`, `support`, `sdc`, workload `image` and `sources`, licence files, or by being directly in one of its `include_dirs`.
-- `licence` matches the licence files: an `SPDX-License-Identifier:` line in a licence file decides; without one, the text of Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause and ISC is recognised. A vendored design without a licence file is an error.
+- `licence` matches the licence files: an `SPDX-License-Identifier:` line in a licence file decides; without one, the text of Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause and ISC is recognised. A vendored design without a licence file is an error. For an expression with `AND`, `OR` or `WITH`, every part must be stated by some licence file (`A WITH B`: by a line with exactly that expression, or by the texts of A and B); a source file that carries the notice can serve as the licence file of `MIT`.
 - Every clock period has a `source`, and the I/O delay fractions have a `source`.
 - A `reference` design has no files under `src/`.

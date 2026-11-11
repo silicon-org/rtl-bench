@@ -149,6 +149,9 @@ pub struct Sim {
     pub defines: BTreeMap<String, String>,
     #[serde(default)]
     pub parameters: BTreeMap<String, String>,
+    /// Extra Verilator options for this variant.
+    #[serde(default)]
+    pub verilator_flags: Vec<String>,
     /// Synthesis files that the simulation leaves out.
     #[serde(default)]
     pub exclude: Vec<String>,

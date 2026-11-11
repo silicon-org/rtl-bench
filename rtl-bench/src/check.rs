@@ -66,18 +66,22 @@ pub fn check_design(l: &Loaded) -> Vec<String> {
         if vendored && files.is_empty() {
             e.add(&k, "a vendored design needs a licence file");
         }
-        let mut found = files.is_empty();
+        let mut texts = Vec::new();
         for file in files.iter() {
             match read_text(dir, file) {
-                Ok(text) => found |= licence_matches(licence, &text),
+                Ok(text) => texts.push(text),
                 Err(m) => e.add(&k, m),
             }
         }
-        if !found {
-            e.add(
-                &format!("{key}.licence"),
-                format!("`{licence}` is not stated in the licence files {files:?}"),
-            );
+        if !files.is_empty() {
+            if let Some(missing) = unstated(licence, &texts) {
+                e.add(
+                    &format!("{key}.licence"),
+                    format!(
+                        "`{missing}` of `{licence}` is not stated in the licence files {files:?}"
+                    ),
+                );
+            }
         }
     }
 
@@ -441,6 +445,27 @@ fn list_files(dir: &Path) -> BTreeSet<String> {
     out
 }
 
+/// The first part of an SPDX expression that no licence text states, if any. The parts
+/// are split at `AND` and `OR` and every one must be stated (the check is conservative);
+/// `A WITH B` is stated by a text with exactly that line, or by texts of both A and B.
+pub fn unstated(expr: &str, texts: &[String]) -> Option<String> {
+    let flat = expr
+        .replace(['(', ')'], " ")
+        .replace(" AND ", "|")
+        .replace(" OR ", "|");
+    for part in flat.split('|').map(str::trim) {
+        let stated = |id: &str| texts.iter().any(|t| licence_matches(id, t));
+        let ok = stated(part)
+            || part
+                .split_once(" WITH ")
+                .is_some_and(|(a, b)| stated(a.trim()) && stated(b.trim()));
+        if !ok {
+            return Some(part.to_string());
+        }
+    }
+    None
+}
+
 /// Does the licence text state this SPDX expression? An `SPDX-License-Identifier:`
 /// line decides; otherwise the text of a few common licences is recognised.
 pub fn licence_matches(expr: &str, text: &str) -> bool {
@@ -464,6 +489,7 @@ pub fn licence_matches(expr: &str, text: &str) -> bool {
         "BSD-2-Clause" => {
             has("Redistribution and use in source and binary forms") && !has("Neither the name")
         }
+        "SHL-2.1" => has("Solderpad Hardware License") && has("version 2.1"),
         "ISC" => has("Permission to use, copy, modify, and/or distribute this software"),
         _ => false,
     }
@@ -646,6 +672,26 @@ max_cycles = 100
             "// SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1\n"
         ));
         assert!(!licence_matches("GPL-3.0-only", "some text"));
+    }
+
+    #[test]
+    fn compound_expression_needs_every_part() {
+        let apache = "Apache License\nVersion 2.0".to_string();
+        let shl = "Solderpad Hardware License version 2.1".to_string();
+        let mit = "Permission is hereby granted, free of charge".to_string();
+        let expr = "(Apache-2.0 WITH SHL-2.1) AND MIT";
+        assert_eq!(
+            unstated(expr, &[apache.clone(), shl.clone(), mit.clone()]),
+            None
+        );
+        assert_eq!(
+            unstated(expr, &[apache.clone(), shl.clone()]),
+            Some("MIT".to_string())
+        );
+        assert_eq!(
+            unstated(expr, &[apache, mit]),
+            Some("Apache-2.0 WITH SHL-2.1".to_string())
+        );
     }
 
     #[test]

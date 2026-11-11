@@ -43,8 +43,6 @@ fn newest(dir: &Path, v: &Variant, files: &[String]) -> Result<SystemTime, Strin
 }
 
 /// Build the simulation view with Verilator. Returns the path of the executable.
-/// Lint warnings of the upstream sources do not stop the build (they are not ours to fix).
-/// Lint warnings of the upstream sources do not stop the build (they are not ours to fix).
 pub fn build(root: &Path, l: &Loaded, v: &Variant, full_id: &str) -> Result<PathBuf, String> {
     let files = sim_files(&l.dir, v)?;
     let mdir = root.join("build").join(full_id);
@@ -67,7 +65,6 @@ pub fn build(root: &Path, l: &Loaded, v: &Variant, full_id: &str) -> Result<Path
             "--assert",
             "--no-trace-top",
             "--relative-includes",
-            "-Wno-fatal",
         ])
         .args([
             "--language",
@@ -97,6 +94,7 @@ pub fn build(root: &Path, l: &Loaded, v: &Variant, full_id: &str) -> Result<Path
     for (k, val) in &v.sim.parameters {
         cmd.arg(format!("-G{k}={val}"));
     }
+    cmd.args(&v.sim.verilator_flags);
     cmd.args(&files);
     eprintln!(
         "building {full_id} with verilator ({} files, -j {})",
