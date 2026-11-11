@@ -1,0 +1,16 @@
+src/hw/ip/prim/dv/prim_prince/crypto_dpi_prince
+src/hw/dv/dpi/gpiodpi
+src/hw/dv/dpi/spidpi
+src/hw/dv/dpi/uartdpi
+src/hw/dv/dpi/usbdpi
+src/hw/dv/dpi/common/tcp_server
+src/hw/dv/sv/dv_utils
+src/hw/ip/prim/dv/prim_secded
+src/hw/dv/verilator/simutil_verilator/cpp
+src/hw/ip/prim/rtl
+src/hw/dv/dpi/dmidpi
+src/hw/dv/dpi/jtagdpi
+src/hw/ip/prim/dv/prim_ram_scr/cpp
+src/hw/dv/verilator/cpp
+src/hw/vendor/lowrisc_ibex/rtl
+src/hw/ip/rv_core_ibex/rtl
