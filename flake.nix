@@ -32,6 +32,21 @@
             ln -s ${rv.binutils}/bin/riscv64-none-elf-$tool $out/bin/riscv64-unknown-elf-$tool
           done
         '';
+        # The nixpkgs newlib is built for the medium-low code model, which cannot address the
+        # 0x80000000 DRAM of blackparrot: build it with -mcmodel=medany. The crtbegin.o and crtend.o of
+        # the nixpkgs gcc have the same problem and only run C++ and TM constructors, so the
+        # programs link empty ones.
+        newlibMedany = pkgs.pkgsCross.riscv64-embedded.newlib.overrideAttrs (o: {
+          preConfigure = o.preConfigure + ''
+            export CFLAGS_FOR_TARGET="-g -O2 -mcmodel=medany"
+          '';
+        });
+        emptyCrt = pkgs.runCommand "empty-crt" { } ''
+          mkdir $out
+          : > empty.s
+          ${rv.binutils}/bin/riscv64-none-elf-as -march=rv64gc -mabi=lp64d empty.s -o $out/crtbegin.o
+          cp $out/crtbegin.o $out/crtend.o
+        '';
         # The wally testbench runs bin/extractFunctionRadix.sh, whose shebang is /bin/bash;
         # NixOS has no /bin/bash, so run it with bash from the shell.
         wallyShims = pkgs.writeShellScriptBin "extractFunctionRadix.sh" ''
@@ -51,6 +66,7 @@
             gnumake
             python3
             uv
+            gettext
             rv.gcc
             rv.binutils
             riscvAliases
@@ -58,6 +74,8 @@
           ];
           # uv runs upstream scripts (elf2hex) with the Python above, never downloads one.
           UV_PYTHON_DOWNLOADS = "never";
+          RISCV_NEWLIB_MEDANY = "${newlibMedany}/riscv64-none-elf/lib";
+          RISCV_EMPTY_CRT = "${emptyCrt}";
         };
       });
 }
