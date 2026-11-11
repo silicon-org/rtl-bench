@@ -58,14 +58,7 @@ pub fn build(root: &Path, l: &Loaded, v: &Variant, full_id: &str) -> Result<Path
     fs::create_dir_all(&mdir).map_err(|e| format!("{}: {e}", mdir.display()))?;
     let mut cmd = Command::new("verilator");
     cmd.current_dir(&l.dir)
-        .args([
-            "--binary",
-            "-j",
-            &jobs(),
-            "--assert",
-            "--no-trace-top",
-            "--relative-includes",
-        ])
+        .args(["--binary", "-j", &jobs()])
         .args([
             "--language",
             if v.synth.language == crate::schema::Language::Sv2017 {
@@ -180,11 +173,25 @@ pub fn run_workload(root: &Path, full_id: &str, workload: &str) -> Result<Outcom
 
     let mut cmd = Command::new(&exe);
     cmd.current_dir(&run_dir);
+    let subst = |a: &str| {
+        a.replace("{workload}", &w.id)
+            .replace("{image}", &image.to_string_lossy())
+            .replace("{dir}", &run_dir.to_string_lossy())
+    };
+    for step in &v.sim.prepare {
+        let words: Vec<String> = step.iter().map(|a| subst(a)).collect();
+        let (prog, rest) = words.split_first().ok_or("prepare: an empty command")?;
+        let status = Command::new(prog)
+            .args(rest)
+            .current_dir(&run_dir)
+            .status()
+            .map_err(|e| format!("prepare: cannot run {prog}: {e}"))?;
+        if !status.success() {
+            return Err(format!("prepare: `{}` failed ({status})", words.join(" ")));
+        }
+    }
     for a in &v.sim.args {
-        cmd.arg(
-            a.replace("{workload}", &w.id)
-                .replace("{image}", &image.to_string_lossy()),
-        );
+        cmd.arg(subst(a));
     }
     for (k, d) in &v.sim.env_dirs {
         cmd.env(k, l.dir.join(d));
@@ -215,7 +222,13 @@ pub fn run_workload(root: &Path, full_id: &str, workload: &str) -> Result<Outcom
     let mut result = check_pass(&w.pass, status.code(), &output);
     let mut summary = format!("{full_id} {}: run time {seconds:.2} s", w.id);
     if let (Ok(()), Some(p)) = (&result, &v.sim.cycles_pattern) {
-        match find_cycles(p, &output) {
+        let text = match &v.sim.cycles_file {
+            Some(f) => {
+                fs::read_to_string(run_dir.join(f)).map_err(|e| format!("cycles_file {f}: {e}"))
+            }
+            None => Ok(output.clone()),
+        };
+        match text.and_then(|t| find_cycles(p, &t)) {
             Ok(c) if c > w.max_cycles => {
                 result = Err(format!("{c} cycles, above max_cycles {}", w.max_cycles))
             }

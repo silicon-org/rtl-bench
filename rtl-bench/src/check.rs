@@ -155,11 +155,8 @@ pub fn check_design(l: &Loaded) -> Vec<String> {
         }
         for (ci, c) in v.clock.iter().enumerate() {
             let ck = format!("{vk}.clock[{ci}]");
-            if c.source.trim().is_empty() {
+            if !c.period_ps.is_empty() && c.source.trim().is_empty() {
                 e.add(&format!("{ck}.source"), "every clock period needs a source");
-            }
-            if c.period_ps.is_empty() {
-                e.add(&format!("{ck}.period_ps"), "no technology has a period");
             }
             for (tech, p) in &c.period_ps {
                 if *p == 0 {
@@ -174,7 +171,10 @@ pub fn check_design(l: &Loaded) -> Vec<String> {
         for (name, x) in [
             ("input_delay_fraction", v.constraints.input_delay_fraction),
             ("output_delay_fraction", v.constraints.output_delay_fraction),
-        ] {
+        ]
+        .into_iter()
+        .filter_map(|(n, x)| x.map(|x| (n, x)))
+        {
             if !(0.0..=1.0).contains(&x) {
                 e.add(
                     &format!("{kk}.{name}"),
@@ -182,7 +182,9 @@ pub fn check_design(l: &Loaded) -> Vec<String> {
                 );
             }
         }
-        if v.constraints.source.trim().is_empty() {
+        let any_fraction = v.constraints.input_delay_fraction.is_some()
+            || v.constraints.output_delay_fraction.is_some();
+        if any_fraction && v.constraints.source.trim().is_empty() {
             e.add(
                 &format!("{kk}.source"),
                 "the I/O delay fractions need a source",
@@ -232,12 +234,27 @@ pub fn check_design(l: &Loaded) -> Vec<String> {
                 e.add(&k, format!("`{p}` is not a directory"));
             }
         }
+        for (i, a) in sim.prepare.iter().flatten().enumerate() {
+            if a.replace("{workload}", "")
+                .replace("{image}", "")
+                .replace("{dir}", "")
+                .contains('{')
+            {
+                e.add(
+                    &format!("{mk}.prepare[{i}]"),
+                    "only {workload}, {image} and {dir} can be used",
+                );
+            }
+        }
         for (i, a) in sim.args.iter().enumerate() {
-            let rest = a.replace("{workload}", "").replace("{image}", "");
+            let rest = a
+                .replace("{workload}", "")
+                .replace("{image}", "")
+                .replace("{dir}", "");
             if rest.contains('{') {
                 e.add(
                     &format!("{mk}.args[{i}]"),
-                    "only {workload} and {image} can be used",
+                    "only {workload}, {image} and {dir} can be used",
                 );
             }
         }
@@ -489,6 +506,7 @@ pub fn licence_matches(expr: &str, text: &str) -> bool {
         "BSD-2-Clause" => {
             has("Redistribution and use in source and binary forms") && !has("Neither the name")
         }
+        "SHL-0.51" => has("Solderpad Hardware License") && has("0.51"),
         "SHL-2.1" => has("Solderpad Hardware License") && has("version 2.1"),
         "ISC" => has("Permission to use, copy, modify, and/or distribute this software"),
         _ => false,
@@ -675,6 +693,16 @@ max_cycles = 100
     }
 
     #[test]
+    fn shl_versions_are_told_apart() {
+        let old = "licensed under the Solderpad Hardware License, Version 0.51".to_string();
+        assert_eq!(unstated("SHL-0.51", std::slice::from_ref(&old)), None);
+        assert_eq!(
+            unstated("SHL-2.1", std::slice::from_ref(&old)),
+            Some("SHL-2.1".to_string())
+        );
+    }
+
+    #[test]
     fn compound_expression_needs_every_part() {
         let apache = "Apache License\nVersion 2.0".to_string();
         let shl = "Solderpad Hardware License version 2.1".to_string();
@@ -720,6 +748,18 @@ max_cycles = 100
                 .any(|m| m.contains("variant[0].clock[0].source") && m.contains("needs a source")),
             "{errs:?}"
         );
+    }
+
+    #[test]
+    fn clock_without_period_needs_no_source() {
+        let t = good();
+        edit(&t, "period_ps = { tech = 1000 }\nsource = \"demo\"\n", "");
+        edit(
+            &t,
+            "input_delay_fraction = 0.2\noutput_delay_fraction = 0.2\nsource = \"demo\"\n",
+            "",
+        );
+        assert_eq!(run(&t), Vec::<String>::new());
     }
 
     #[test]
@@ -793,6 +833,22 @@ max_cycles = 100
         assert!(
             errs.iter()
                 .any(|m| m.contains("sim.exclude[0]") && m.contains("not a synthesis file")),
+            "{errs:?}"
+        );
+    }
+
+    #[test]
+    fn prepare_placeholders_are_checked() {
+        let t = good();
+        edit(
+            &t,
+            "dut = \"tb.dut\"",
+            "dut = \"tb.dut\"\nprepare = [[\"cp\", \"{image}\", \"{nope}\"]]",
+        );
+        let errs = run(&t);
+        assert!(
+            errs.iter()
+                .any(|m| m.contains("sim.prepare[2]") && m.contains("{dir}")),
             "{errs:?}"
         );
     }

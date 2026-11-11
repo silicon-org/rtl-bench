@@ -111,17 +111,22 @@ pub struct MemoryMacro {
 pub struct Clock {
     pub name: String,
     pub port: String,
-    /// Technology name to period in picoseconds.
+    /// Technology name to period in picoseconds. Empty until a period is decided.
+    #[serde(default)]
     pub period_ps: BTreeMap<String, u64>,
+    /// Where the periods come from; needed as soon as there is one.
+    #[serde(default)]
     pub source: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Constraints {
-    pub input_delay_fraction: f64,
-    pub output_delay_fraction: f64,
-    /// Where the two fractions come from.
+    /// Not set until decided; `rtl-bench sdc` then fails.
+    pub input_delay_fraction: Option<f64>,
+    pub output_delay_fraction: Option<f64>,
+    /// Where the two fractions come from; needed as soon as one is set.
+    #[serde(default)]
     pub source: String,
     #[serde(default)]
     pub resets: Vec<String>,
@@ -166,11 +171,17 @@ pub struct Sim {
     /// Environment variables set to the absolute path of a directory of the design.
     #[serde(default)]
     pub env_dirs: BTreeMap<String, String>,
-    /// Arguments of the simulation; `{workload}` and `{image}` are replaced.
+    /// Commands run in the run directory before the simulation (image conversion), as word lists.
+    #[serde(default)]
+    pub prepare: Vec<Vec<String>>,
+    /// Arguments of the simulation. In these and in `prepare`, `{workload}`, `{image}` (the copy of the
+    /// image) and `{dir}` (the run directory) are replaced.
     #[serde(default)]
     pub args: Vec<String>,
     /// Regular expression, one capture group: the cycle count in the output.
     pub cycles_pattern: Option<String>,
+    /// File of the run directory that `cycles_pattern` reads instead of the output.
+    pub cycles_file: Option<String>,
     #[serde(default)]
     pub workload: Vec<Workload>,
 }

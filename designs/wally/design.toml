@@ -61,9 +61,9 @@ false_paths = [{ from = "reset" }]       # upstream synthDC/scripts/synth.tcl: s
 simulator = "verilator"
 top = "testbench"
 files = "variants/rv64gc/sim.f"
-# Warnings of the upstream sources must not stop the build: PrintHPMCounters=1 draws WIDTHEXPAND and
-# WIDTHTRUNC at testbench/common/loggers.sv:39, which is upstream code.
-verilator_flags = ["-Wno-fatal"]
+# The options of upstream sim/verilator/Makefile, and: warnings of the upstream sources must not stop the
+# build: PrintHPMCounters=1 draws WIDTHEXPAND and WIDTHTRUNC at testbench/common/loggers.sv:39.
+verilator_flags = ["--assert", "--no-trace-top", "--relative-includes", "-Wno-fatal"]
 exclude = ["src/generated/wallypipelinedcorewrapper.sv"]
 parameters = { PrintHPMCounters = "1" }
 dut = "testbench.dut.core"
