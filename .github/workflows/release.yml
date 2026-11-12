@@ -1,0 +1,33 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: package and release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
+      - uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15
+      - name: Build the package
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          nix develop -c cargo build --release
+          nix develop -c target/release/rtl-bench package --version "${TAG#v}" --out dist
+          (cd dist && sha256sum rtl-bench-*.tar.gz | tee SHA256SUMS)
+      # The runner has the GitHub CLI; no third-party action gets the write token.
+      - name: Attach it to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" dist/rtl-bench-*.tar.gz dist/SHA256SUMS \
+            --title "$TAG" --verify-tag --notes "Reproducible package of the designs, docs and tool. MANIFEST.toml lists every variant."

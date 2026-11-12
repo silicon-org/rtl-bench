@@ -104,6 +104,15 @@ With `cycles_pattern`, `rtl-bench sim` also reads the cycle count from the outpu
 
 `period_ps` and the two delay fractions are optional. `rtl-bench sdc` fails with a message that names the clock or the missing key when one is not set; a variant without periods needs no `source` for them.
 
+## Package
+
+`rtl-bench package --version <x.y.z> --out <dir>` writes `rtl-bench-v<x.y.z>.tar.gz`. It runs `check` first and refuses a git tree that is not clean. The archive holds the tracked files of `designs/`, `docs/`, the tool sources (`rtl-bench/`, `Cargo.toml`, `Cargo.lock`, `flake.nix`, `flake.lock`) and the top-level documents, under the folder `rtl-bench-v<x.y.z>/`, plus:
+
+- `VERSION` and `SOURCE_COMMIT` (the git commit),
+- `MANIFEST.toml`: one `[[variant]]` per variant with `id`, `design`, `top`, `licence`, the paths of the synthesis file list, include directories, macros, constraints and workloads (relative to the package root), so a consumer needs no tool.
+
+The bytes depend only on the commit and the version: entries are sorted by path, owner and group are 0, the time of every entry is the commit time, and gzip has no name and no time. A push of a tag `v*` builds the package in CI and attaches it to a GitHub release.
+
 ## Rules checked by `rtl-bench check`
 
 - Every listed file exists; every path is relative to the design directory and stays inside it.

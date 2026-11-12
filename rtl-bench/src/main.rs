@@ -1,5 +1,6 @@
 mod check;
 mod design;
+mod package;
 mod schema;
 mod sdc;
 mod sim;
@@ -13,7 +14,8 @@ const USAGE: &str = "usage:
   rtl-bench sim <design.variant> <workload>
   rtl-bench elaborate <design.variant>
   rtl-bench sdc <design.variant> --technology <name>
-  rtl-bench table";
+  rtl-bench table
+  rtl-bench package --version <x.y.z> --out <dir>";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -29,6 +31,10 @@ fn main() -> ExitCode {
     {
         ["check"] => cmd_check(&root),
         ["table"] => cmd_table(&root),
+        ["package", "--version", version, "--out", out]
+        | ["package", "--out", out, "--version", version] => {
+            cmd_package(&root, version, Path::new(out))
+        }
         ["sim", id, workload] => sim::run_workload(&root, id, workload).map(|o| {
             println!("{}", o.message);
             o.passed
@@ -89,5 +95,14 @@ fn cmd_table(root: &Path) -> Result<bool, String> {
     let readme = std::fs::read_to_string(&path).map_err(|e| format!("README.md: {e}"))?;
     let fresh = table::splice(&readme, &table::render(&designs))?;
     std::fs::write(&path, fresh).map_err(|e| format!("README.md: {e}"))?;
+    Ok(true)
+}
+
+fn cmd_package(root: &Path, version: &str, out: &Path) -> Result<bool, String> {
+    if !cmd_check(root)? {
+        return Err("check fails, nothing is packaged".into());
+    }
+    let path = package::build(root, version, out)?;
+    println!("{}", path.display());
     Ok(true)
 }
