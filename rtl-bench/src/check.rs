@@ -513,9 +513,25 @@ fn read_paths(e: &mut Errors, dir: &Path, key: &str, list: &str) -> Vec<String> 
     }
     match read_list(dir, list) {
         Ok(files) => {
-            for f in &files {
+            let mut first: std::collections::BTreeMap<String, usize> =
+                std::collections::BTreeMap::new();
+            for (i, f) in files.iter().enumerate() {
                 if path_ok(e, key, f) && !dir.join(f).is_file() {
                     e.add(key, format!("`{list}` names `{f}`, which does not exist"));
+                }
+                // A path in a file list once only: a tool that reads the list as given reads
+                // the file twice, and tools differ in what that means.
+                if let Some(at) = first.get(&norm(f)) {
+                    e.add(
+                        key,
+                        format!(
+                            "`{list}` names `{f}` twice (entries {} and {})",
+                            at + 1,
+                            i + 1
+                        ),
+                    );
+                } else {
+                    first.insert(norm(f), i);
                 }
             }
             files
@@ -735,6 +751,38 @@ timeout_s = 60
     fn good_design_passes() {
         let t = good();
         assert_eq!(run(&t), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_path_listed_twice_in_a_file_list_is_an_error() {
+        let t = good();
+        fs::write(
+            t.path().join("designs/demo/v/synth.f"),
+            "src/top.sv\nsrc/top.sv\n",
+        )
+        .unwrap();
+        let errs = run(&t);
+        assert!(
+            errs.iter().any(
+                |m| m.starts_with("designs/demo/design.toml: variant[0].synth.files:")
+                    && m.ends_with("`v/synth.f` names `src/top.sv` twice (entries 1 and 2)")
+            ),
+            "{errs:?}"
+        );
+        // The same file written with a `./` is the same path.
+        fs::write(
+            t.path().join("designs/demo/v/synth.f"),
+            "src/top.sv\n./src/top.sv\n",
+        )
+        .unwrap();
+        assert!(run(&t).iter().any(|m| m.contains("twice")));
+        // Two different files are fine.
+        fs::write(
+            t.path().join("designs/demo/v/synth.f"),
+            "src/top.sv\nsrc/tb.sv\n",
+        )
+        .unwrap();
+        assert!(!run(&t).iter().any(|m| m.contains("twice")));
     }
 
     #[test]

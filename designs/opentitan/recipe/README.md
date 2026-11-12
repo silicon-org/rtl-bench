@@ -24,8 +24,8 @@ OpenTitan's tools resolve the file lists with FuseSoC (the lowRISC fork `ot-0.5.
 
 The cores root of the copy lacks three directories: `hw/ip/prim_xilinx` and `hw/ip/prim_xilinx_ultrascale` (FPGA technology libraries), and `hw/top_englishbreakfast` (the other chip, whose cores have the same names as the Earl Grey cores). Without the Xilinx cores, the generator `primgen` (a FuseSoC generator, `hw/ip/prim/util/primgen.py`) writes the abstract primitives (`prim_flop`, `prim_rom`, `prim_flash`, ...: 22 files in `src/generated/`, one core each) with the generic implementation only, so `prim_xilinx*` is neither in the list nor named in the generated RTL. `PRIM_DEFAULT_IMPL` defaults to `prim_pkg::ImplGeneric`. Everything else that the list names is checked in: the register tops, the crossbar, `top_earlgrey` and `chip_earlgrey_asic` are under `hw/top_earlgrey/rtl/autogen` and `hw/top_earlgrey/ip_autogen`.
 
-- `variants/earlgrey/synth.f`: 652 files; `*-defines.txt`, `*-incdirs.txt` and `sim-edalize-config.mk.txt` are the defines, include directories and edalize options that FuseSoC wrote.
-- `variants/earlgrey/sim.f`: 772 files (waivers `.vlt` first, then RTL, then the DPI C files and the C++ main).
+- `variants/earlgrey/synth.f`: 651 files; `*-defines.txt`, `*-incdirs.txt` and `sim-edalize-config.mk.txt` are the defines, include directories and edalize options that FuseSoC wrote.
+- `variants/earlgrey/sim.f`: 767 files (waivers `.vlt` first, then RTL, then the DPI C files and the C++ main).
 - The headers of the include directories and the files that the listed ones include are copied too (`recipe/includes.py`); `uvm_macros.svh` and `formal_tb_frag.svh` are not (guarded by `UVM` and `FORMAL`).
 
 ## Synthesis top

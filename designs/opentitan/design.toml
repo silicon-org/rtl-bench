@@ -35,7 +35,7 @@ description = "The full Earl Grey chip with the generic primitives and the behav
 # and the AST; the module top_earlgrey inside it is expanded). The other flow, top_earlgrey_gtech_*,
 # synthesises top_earlgrey alone, without pads and AST, as a technology-independent check. The file
 # list is what FuseSoC resolves for lowrisc:systems:chip_earlgrey_asic:0.1 (target syn, flag
-# fileset_top) in the cores root of recipe/README.md: 652 files, 22 of them the abstract primitives
+# fileset_top) in the cores root of recipe/README.md: 651 files, 22 of them the abstract primitives
 # that primgen generates (src/generated).
 [variant.synth]
 top = "chip_earlgrey_asic"

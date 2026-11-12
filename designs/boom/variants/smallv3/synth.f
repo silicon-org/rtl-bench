@@ -531,8 +531,4 @@ src/generated/TageTable_1.sv
 src/generated/RoundRawFNToRecFN_e11_s53_1.sv
 src/generated/TLFragmenter_BootAddrReg.sv
 src/generated/ClockCrossingReg_w43.sv
-src/generated/EICG_wrapper.v
-src/generated/GenericDigitalInIOCell.v
-src/generated/GenericDigitalOutIOCell.v
-src/generated/plusarg_reader.v
 src/generated/chipyard.harness.TestHarness.SmallBoomV3Config.top.mems.v

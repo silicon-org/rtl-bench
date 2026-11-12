@@ -42,8 +42,9 @@ mkdir -p "$here/variants/earlgrey"
 python3 -I "$here/recipe/flist.py" "$synscr" "$w/syn/syn-icarus" "$w/ot" > "$w/syn.txt"
 python3 -I "$here/recipe/flist.py" "$simvc" "$w/sim/sim-verilator" "$w/ot" > "$w/sim.txt"
 # the lists, in the order of the tools (waivers and packages first)
-sed -n 's/^F //p' "$w/syn.txt" | sed 's#^#src/#' > "$here/variants/earlgrey/synth.f"
-sed -n 's/^F //p' "$w/sim.txt" | sed 's#^#src/#' > "$here/variants/earlgrey/sim.f"
+# FuseSoC lists a file once for each core that uses it (ast_pkg.sv twice); a path stays at its first place
+sed -n 's/^F //p' "$w/syn.txt" | sed 's#^#src/#' | awk '!seen[$0]++' > "$here/variants/earlgrey/synth.f"
+sed -n 's/^F //p' "$w/sim.txt" | sed 's#^#src/#' | awk '!seen[$0]++' > "$here/variants/earlgrey/sim.f"
 sed -n 's/^D //p' "$w/syn.txt" > "$here/variants/earlgrey/synth-defines.txt"
 sed -n 's/^D //p' "$w/sim.txt" > "$here/variants/earlgrey/sim-defines.txt"
 sed -n 's/^I //p' "$w/syn.txt" | sed 's#^#src/#' > "$here/variants/earlgrey/synth-incdirs.txt"

@@ -24,7 +24,7 @@ rel() { sed "s#^$g/gen-collateral/#src/generated/#; s#^\./#src/generated/#"; }
   rel < "$g"/chipyard.harness.TestHarness.SmallBoomV3Config.top.f
   grep -E '/(EICG_wrapper|GenericDigitalInIOCell|GenericDigitalOutIOCell|plusarg_reader)\.v$' "$g"/chipyard.harness.TestHarness.SmallBoomV3Config.bb.f | rel
   echo src/generated/chipyard.harness.TestHarness.SmallBoomV3Config.top.mems.v
-} > "$here/variants/smallv3/synth.f"
+} | awk '!seen[$0]++' > "$here/variants/smallv3/synth.f"   # top.f already names the black boxes of bb.f
 # simulation: what Chipyard's Verilator build reads (sim_files.common.f), then DRAMSim2
 {
   rel < "$g/sim_files.common.f"

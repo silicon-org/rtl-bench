@@ -27,13 +27,10 @@ src/hw/vendor/lowrisc_ibex/lint/verilator_waiver.vlt
 src/hw/ip/prim/lint/prim_subreg.vlt
 src/hw/ip/lc_ctrl/lint/lc_ctrl_pkg.vlt
 src/hw/ip/otp_ctrl/lint/otp_ctrl_pkg.vlt
-src/hw/ip/prim/lint/prim.vlt
 src/hw/ip/prim/lint/prim_fifo.vlt
 src/hw/ip/prim/lint/prim_ram_1p_scr.vlt
-src/hw/vendor/lowrisc_ibex/lint/verilator_waiver.vlt
 src/hw/ip/tlul/lint/tlul_common.vlt
 src/hw/top_earlgrey/ip_autogen/rv_plic/lint/rv_plic.vlt
-src/hw/ip/prim/lint/prim.vlt
 src/hw/ip/tlul/lint/tlul_adapter_reg.vlt
 src/hw/ip/tlul/lint/tlul_adapter_sram.vlt
 src/hw/ip/tlul/lint/tlul_lc_gate.vlt
@@ -75,7 +72,6 @@ src/hw/ip/rom_ctrl/lint/rom_ctrl.vlt
 src/hw/ip/rv_core_ibex/lint/rv_core_ibex.vlt
 src/hw/top_earlgrey/ip_autogen/flash_ctrl/lint/flash_ctrl_pkg.vlt
 src/hw/ip/keymgr/lint/keymgr.vlt
-src/hw/top_earlgrey/ip_autogen/pwrmgr/lint/pwrmgr.vlt
 src/hw/top_earlgrey/ip/ast/lint/ast.vlt
 src/hw/ip/prim_generic/lint/prim_generic_flash.vlt
 src/hw/top_earlgrey/ip_autogen/flash_ctrl/lint/flash_ctrl.vlt
@@ -688,7 +684,6 @@ src/hw/top_earlgrey/ip_autogen/clkmgr/rtl/clkmgr_meas_chk.sv
 src/hw/top_earlgrey/ip_autogen/clkmgr/rtl/clkmgr_root_ctrl.sv
 src/hw/top_earlgrey/ip_autogen/clkmgr/rtl/clkmgr_trans.sv
 src/hw/top_earlgrey/ip/ast/rtl/ast_reg_pkg.sv
-src/hw/top_earlgrey/ip/ast/rtl/ast_pkg.sv
 src/hw/top_earlgrey/ip/ast/rtl/ast_bhv_pkg.sv
 src/hw/top_earlgrey/ip/ast/rtl/ast.sv
 src/hw/top_earlgrey/ip/ast/rtl/ast_reg_top.sv

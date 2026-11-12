@@ -594,7 +594,6 @@ src/hw/top_earlgrey/ip_autogen/clkmgr/rtl/clkmgr_meas_chk.sv
 src/hw/top_earlgrey/ip_autogen/clkmgr/rtl/clkmgr_root_ctrl.sv
 src/hw/top_earlgrey/ip_autogen/clkmgr/rtl/clkmgr_trans.sv
 src/hw/top_earlgrey/ip/ast/rtl/ast_reg_pkg.sv
-src/hw/top_earlgrey/ip/ast/rtl/ast_pkg.sv
 src/hw/top_earlgrey/ip/ast/rtl/ast_bhv_pkg.sv
 src/hw/top_earlgrey/ip/ast/rtl/ast.sv
 src/hw/top_earlgrey/ip/ast/rtl/ast_reg_top.sv
