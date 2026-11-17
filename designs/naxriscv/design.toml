@@ -1,0 +1,166 @@
+[design]
+id = "naxriscv"
+name = "NaxRiscv"
+description = "Out-of-order RISC-V core (RV64IMAFDCSU, two-way, Sv39 MMU) that SpinalHDL generates."
+
+[source]
+repository = "https://github.com/SpinalHDL/NaxRiscv"
+commit = "9f452d50560d02fb391bc8039f5453c54e0911af"
+mode = "vendored"
+# NaxRiscv itself is MIT (LICENSES/MIT.txt). The others are the sources of the simulator and of the workloads.
+licence = "MIT AND BSD-3-Clause AND Apache-2.0"
+licence_files = ["licences/naxriscv/MIT.txt"]
+
+# SpinalHDL, the submodule ext/SpinalHDL of NaxRiscv: its library (StreamFifo, StreamArbiter, ...) is in the output
+# Verilog and is MIT (LICENSE_lib). Its core, the generator, is LGPL-3.0 (LICENSE_core, kept next to it); no
+# code of the core is in the output.
+[[source.dependency]]
+repository = "https://github.com/SpinalHDL/SpinalHDL"
+commit = "c362657003fa178350d6955055867e9ab363c44a"
+licence = "MIT"
+licence_files = ["licences/spinalhdl/LICENSE_lib"]
+
+# The simulator links Spike (the fork of NaxRiscv, the submodule ext/riscv-isa-sim) as the golden model of its
+# lock-step check. It is built by flake.nix, not vendored.
+[[source.dependency]]
+repository = "https://github.com/SpinalHDL/riscv-isa-sim"
+commit = "5b37ab699f6176ea7f2d2b3187f75625eca7e511"
+licence = "BSD-3-Clause"
+licence_files = ["licences/riscv-isa-sim/LICENSE"]
+
+# The simulator loads ELF files with ELFIO (a header library, the commit that the Makefile of the testbench pins).
+[[source.dependency]]
+repository = "https://github.com/serge1/ELFIO"
+commit = "d251da09a07dff40af0b63b8f6c8ae71d2d1938d"
+licence = "MIT"
+licence_files = ["licences/elfio/LICENSE.txt"]
+
+# The sources of rv64ui-p-simple and rv64ui-p-add (the riscv-tests that the regression of NaxRiscv runs).
+[[source.dependency]]
+repository = "https://github.com/riscv-software-src/riscv-tests"
+commit = "c84daca8824635b7d896003c78f9c6245997cf7a"
+licence = "BSD-3-Clause"
+licence_files = ["licences/riscv-tests/LICENSE"]
+
+# The sources of the dhrystone and coremark workloads, the submodule ext/NaxSoftware of NaxRiscv: dhrystone is the
+# riscv-tests benchmark (BSD-3-Clause, the file above), coremark has the Apache-2.0 notice of EEMBC in its headers
+# (the licence file is that of the CoreMark repository).
+[[source.dependency]]
+repository = "https://github.com/SpinalHDL/NaxSoftware"
+commit = "865b8c1465cb24c78423d16fd6dd74d12f643bda"
+licence = "Apache-2.0 AND BSD-3-Clause"
+licence_files = ["licences/naxsoftware/COREMARK-LICENSE.md", "licences/riscv-tests/LICENSE"]
+
+[[variant]]
+id = "rv64"
+description = "naxriscv.Gen64 --withRvc --withFloat --withDouble: RV64IMAFDCSU, two decoders, two ALUs, 16 KiB 4-way instruction and data caches, Sv39 MMU, as upstream builds its rv64imafdcsu target."
+
+# Synthesis top: NaxRiscv, the module that Gen64 writes. Its memories (cache arrays, branch predictor, register
+# file, queues) are inferred arrays inside the modules, not separate modules, so there are no macros.
+[variant.synth]
+top = "NaxRiscv"
+language = "verilog-2005"
+files = "variants/rv64/synth.f"
+include_dirs = ["src/generated"]
+macros = []
+
+# No period and no I/O delays: upstream publishes no constraint file and no frequency for an open PDK (its numbers
+# are for a Xilinx Artix 7 FPGA). reset is a synchronous, active-high reset.
+[[variant.clock]]
+name = "clk"
+port = "clk"
+
+[variant.constraints]
+resets = ["reset"]
+
+# Simulation: the testbench of NaxRiscv (src/test/cpp/naxriscv/src, main.cpp) built as its Makefile builds it
+# (target verilate: Verilator with --exe and the Spike libraries), with Verilator 4.228, the version the Makefile
+# pins; main.cpp reaches into the model as Verilator 4 lays it out (top->NaxRiscv). The testbench loads the ELF,
+# serves memory, UART and CLINT, runs the Spike fork as a reference model and checks every commit against it.
+[variant.sim]
+simulator = "verilator"
+top = "NaxRiscv"
+files = "variants/rv64/sim.f"
+verilator = "${NAX_VERILATOR4}/bin/verilator"
+include_dirs = ["src/testbench"]
+dut = "NaxRiscv"
+# The flags of the Makefile (SRCS, ADDCFLAGS, FLAGS): nax.h (src/nax.h of the Makefile), the Spike include directories, ELFIO and SDL2 (the
+# framebuffer of the testbench), -O3, --x-assign unique, split output. Left out: TRACE=yes (the FST wave trace,
+# which no workload here asks for), --gdbbt (it runs gdb on a failure) and -g. The Spike libraries and package.so are file arguments, as in SRCS.
+verilator_flags = [
+  "--exe", "-O3", "--x-assign", "unique", "--autoflush",
+  "--output-split", "5000", "--output-split-cfuncs", "500",
+  "-Wno-UNOPTFLAT", "-Wno-WIDTH",
+  "-CFLAGS", "-std=c++14", "-CFLAGS", "-O3", "-CFLAGS", "-rdynamic",
+  "-CFLAGS", "-I${NAX_SPIKE}/riscv", "-CFLAGS", "-I${NAX_SPIKE}/fesvr", "-CFLAGS", "-I${NAX_SPIKE}/softfloat",
+  "-CFLAGS", "-I${NAX_SPIKE}/build", "-CFLAGS", "-I${NAX_ELFIO}", "-CFLAGS", "-I${DESIGN_DIR}/src/generated",
+  "-CFLAGS", "-I${NAX_SDL2}/include/SDL2", "-CFLAGS", "-I${NAX_SDL2}/include",
+  "-LDFLAGS", "-pthread", "-LDFLAGS", "-L${NAX_SDL2_LIB}", "-LDFLAGS", "-Wl,-rpath,${NAX_SDL2_LIB}",
+  "-LDFLAGS", "-Wl,-rpath,${NAX_SPIKE}/build", "-LDFLAGS", "-lSDL2", "-LDFLAGS", "-lz",
+  "${NAX_SPIKE}/build/libspike_main.a", "${NAX_SPIKE}/build/libriscv.a", "${NAX_SPIKE}/build/libdisasm.a",
+  "${NAX_SPIKE}/build/libsoftfloat.a", "${NAX_SPIKE}/build/libfesvr.a", "${NAX_SPIKE}/build/libfdt.a",
+  "${NAX_SPIKE}/build/package.so",
+]
+# The arguments of the regression (testsGen.py): --no-stdin (no terminal input), --stats-print (prints `cycles N`,
+# the commits and the IPC at the end), --seed 0 (the seed of the randomisers of the testbench; srand48), the
+# ELF, the symbols at which the run starts and passes or fails. A passing run prints `SUCCESS` and a failing one
+# `FAILURE`; the simulator exits with 0 in both cases, so the pass check reads the output.
+args = ["--no-stdin", "--stats-print", "--seed", "0", "--load-elf", "{image}", "--pass-symbol", "pass", "--fail-symbol", "fail"]
+cycles_pattern = 'cycles +([0-9]+)'
+
+# max_cycles: about ten times the cycles that `rtl-bench sim` printed (NAS, Verilator 4.228, one thread; the `cycles`
+# line of --stats-print): rv64ui-p-add 746, rv64ui-p-sd 1078, rv64um-p-mul 704, rv64ua-p-amoadd_d 198, dhrystone
+# 200722, coremark 2177686. --timeout is the simulator's own limit, in simulation time (two steps per cycle): twice
+# max_cycles. The riscv-tests are those of the regression of NaxRiscv (testsGen.py: start at test_2, pass at the
+# symbol pass, fail at the symbol fail); dhrystone and coremark are its baremetal programs (start at _start; coremark
+# with 10 iterations, the ITERATIONS of its makefile). Every commit is checked against the Spike model, so SUCCESS
+# means the core and the model agreed on the whole run. rv64ui-p-simple is not a workload: it passes by writing
+# tohost, which the testbench does not serve.
+
+[[variant.sim.workload]]
+id = "rv64ui-p-add"
+image = "sim/rv64ui-p-add"
+pass = { kind = "stdout", contains = "SUCCESS" }
+args = ["--start-symbol", "test_2", "--timeout", "15000"]
+max_cycles = 7500
+timeout_s = 600
+
+[[variant.sim.workload]]
+id = "rv64ui-p-sd"
+image = "sim/rv64ui-p-sd"
+pass = { kind = "stdout", contains = "SUCCESS" }
+args = ["--start-symbol", "test_2", "--timeout", "22000"]
+max_cycles = 11000
+timeout_s = 600
+
+[[variant.sim.workload]]
+id = "rv64um-p-mul"
+image = "sim/rv64um-p-mul"
+pass = { kind = "stdout", contains = "SUCCESS" }
+args = ["--start-symbol", "test_2", "--timeout", "14200"]
+max_cycles = 7100
+timeout_s = 600
+
+[[variant.sim.workload]]
+id = "rv64ua-p-amoadd_d"
+image = "sim/rv64ua-p-amoadd_d"
+pass = { kind = "stdout", contains = "SUCCESS" }
+args = ["--start-symbol", "test_2", "--timeout", "4000"]
+max_cycles = 2000
+timeout_s = 600
+
+[[variant.sim.workload]]
+id = "dhrystone"
+image = "sim/dhrystone"
+pass = { kind = "stdout", contains = "SUCCESS" }
+args = ["--start-symbol", "_start", "--timeout", "4000000"]
+max_cycles = 2000000
+timeout_s = 3600
+
+[[variant.sim.workload]]
+id = "coremark"
+image = "sim/coremark"
+pass = { kind = "stdout", contains = "SUCCESS" }
+args = ["--start-symbol", "_start", "--timeout", "44000000"]
+max_cycles = 22000000
+timeout_s = 3600

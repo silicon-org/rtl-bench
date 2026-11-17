@@ -1,0 +1,27 @@
+#pragma once
+
+#define RVF true
+#define RVD true
+#define FETCH_MEM_DATA_BITS 64
+#define FETCH_LINE_BYTES 64
+#define RVC true
+#define LSU_PERIPHERAL_WIDTH 64
+#define RVA true
+#define DATA_MEM_DATA_BITS 64
+#define DATA_LINE_BYTES 64
+#define DATA_CACHE_REFILL_COUNT 2
+#define DATA_CACHE_WRITEBACK_COUNT 2
+#define FPU_ROB_TO_FLAG_COUNT 2
+#define COMMIT_COUNT 2
+#define DISPATCH_COUNT 2
+#define SUPERVISOR 1
+#define TVAL_WIDTH 40
+#define DECODE_COUNT 2
+#define XLEN 64
+#define ISSUE_PORTS 4
+#define INTEGER_WRITE_COUNT 4
+#define INTEGER_PHYSICAL_DEPTH 64
+#define FLOAT_WRITE_COUNT 2
+#define FLOAT_PHYSICAL_DEPTH 64
+#define ROB_SIZE 64
+#define ROB_COMPLETIONS_PORTS 9

@@ -19,6 +19,7 @@ The release is a tarball. Tools pin it by hash.
 | SonicBOOM | smallv3 | [ucb-bar/chipyard](https://github.com/ucb-bar/chipyard) at `157dd69e49b9` | BSD-3-Clause AND Apache-2.0 AND BSD-2-Clause | vendored |
 | Caliptra | core | [chipsalliance/caliptra-rtl](https://github.com/chipsalliance/caliptra-rtl) at `49370266d12c` | Apache-2.0 AND BSD-2-Clause AND Unlicense | vendored |
 | Gemmini | rocket16x16 | [ucb-bar/chipyard](https://github.com/ucb-bar/chipyard) at `157dd69e49b9` | BSD-3-Clause AND Apache-2.0 AND BSD-2-Clause | vendored |
+| NaxRiscv | rv64 | [SpinalHDL/NaxRiscv](https://github.com/SpinalHDL/NaxRiscv) at `9f452d50560d` | MIT AND BSD-3-Clause AND Apache-2.0 | vendored |
 | OpenTitan Earl Grey | earlgrey | [lowRISC/opentitan](https://github.com/lowRISC/opentitan) at `96c62c527b18` | Apache-2.0 AND SHL-0.51 | vendored |
 | Vortex | default | [vortexgpgpu/vortex](https://github.com/vortexgpgpu/vortex) at `ca18837bd087` | Apache-2.0 | vendored |
 | CORE-V Wally | rv64gc | [openhwfoundation/cvw](https://github.com/openhwfoundation/cvw) at `90259bdca99c` | (Apache-2.0 WITH SHL-2.1) AND MIT AND Apache-2.0 | vendored |
