@@ -85,6 +85,20 @@ pub fn verilator_program(v: &Variant, design_dir: &Path) -> Result<String, Strin
     }
 }
 
+/// The argument of a source file for Verilator. A C++ file has an absolute path: the make of the model runs in the
+/// build directory, and Verilator 4 hands it the path as given.
+pub fn source_arg(design_dir: &Path, file: &str) -> String {
+    let cpp = matches!(
+        Path::new(file).extension().and_then(|e| e.to_str()),
+        Some("cpp" | "cc" | "cxx" | "c")
+    );
+    if cpp {
+        design_dir.join(file).to_string_lossy().into_owned()
+    } else {
+        file.to_string()
+    }
+}
+
 /// Build the simulation view with Verilator. Returns the path of the executable.
 pub fn build(root: &Path, l: &Loaded, v: &Variant, full_id: &str) -> Result<PathBuf, String> {
     let files = sim_files(&l.dir, v)?;
@@ -144,7 +158,9 @@ pub fn build(root: &Path, l: &Loaded, v: &Variant, full_id: &str) -> Result<Path
     for f in &v.sim.verilator_flags {
         cmd.arg(expand_env(f, &l.dir)?);
     }
-    cmd.args(&files);
+    for f in &files {
+        cmd.arg(source_arg(&l.dir, f));
+    }
     eprintln!(
         "building {full_id} with verilator ({} files, -j {})",
         files.len(),
@@ -399,6 +415,15 @@ mod tests {
         assert!(expand_env("${open", Path::new("/d"))
             .unwrap_err()
             .contains("without"));
+    }
+
+    #[test]
+    fn cpp_sources_get_absolute_paths() {
+        let d = Path::new("/design");
+        assert_eq!(source_arg(d, "src/tb/main.cpp"), "/design/src/tb/main.cpp");
+        assert_eq!(source_arg(d, "src/x.cc"), "/design/src/x.cc");
+        assert_eq!(source_arg(d, "src/rtl/top.v"), "src/rtl/top.v");
+        assert_eq!(source_arg(d, "src/rtl/top.sv"), "src/rtl/top.sv");
     }
 
     fn variant_with_sim(extra: &str) -> Variant {

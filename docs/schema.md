@@ -60,7 +60,7 @@ sdc = []                                 # upstream SDC files, unmodified, if an
 [variant.sim]
 simulator = "verilator"
 top = "testbench"
-files = "variants/unicore/sim.f"         # testbench files; the synthesis files are added first
+files = "variants/unicore/sim.f"         # testbench files (C++ files are passed by absolute path); the synthesis files are added first
 verilator = "${NAX_VERILATOR4}/bin/verilator"   # optional: the Verilator program of this variant (${NAME} is replaced); default: `verilator` of the PATH
 verilator_flags = []                     # Verilator options of this variant (a .vlt file goes here, before the sources), with the reason in a comment;
                                          # ${NAME} is replaced by an environment variable and ${DESIGN_DIR} by the absolute design directory;
