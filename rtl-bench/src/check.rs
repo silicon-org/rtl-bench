@@ -358,6 +358,45 @@ pub fn check_design(l: &Loaded) -> Vec<String> {
                 ),
             }
         }
+        if let Some(c) = &sim.cocotb {
+            let ck = format!("{mk}.cocotb");
+            if path_ok(&mut e, &format!("{ck}.dir"), &c.dir) {
+                if !dir.join(&c.dir).is_dir() {
+                    e.add(
+                        &format!("{ck}.dir"),
+                        format!("`{}` is not a directory", c.dir),
+                    );
+                } else if !is_py_ident(&c.module) {
+                    e.add(
+                        &format!("{ck}.module"),
+                        format!("`{}` is not a Python module name", c.module),
+                    );
+                } else {
+                    exists(
+                        &mut e,
+                        dir,
+                        &format!("{ck}.module"),
+                        &format!("{}/{}.py", c.dir.trim_end_matches('/'), c.module),
+                        &mut listed,
+                    );
+                }
+            }
+            if !valid_timescale(&c.timescale) {
+                e.add(
+                    &format!("{ck}.timescale"),
+                    format!(
+                        "`{}` is not of the form `1ns/1ps` (1, 10 or 100, a unit, `/`, the same for the precision)",
+                        c.timescale
+                    ),
+                );
+            }
+            if !sim.args.is_empty() || !sim.prepare.is_empty() || sim.uart_file.is_some() {
+                e.add(
+                    &ck,
+                    "a cocotb variant has no args, prepare or uart_file: upstream's tests drive the design",
+                );
+            }
+        }
         if sim.workload.is_empty() {
             e.add(
                 &format!("{mk}.workload"),
@@ -370,7 +409,43 @@ pub fn check_design(l: &Loaded) -> Vec<String> {
             if !seen_workloads.insert(&w.id) {
                 e.add(&format!("{wk}.id"), format!("`{}` is used twice", w.id));
             }
-            exists(&mut e, dir, &format!("{wk}.image"), &w.image, &mut listed);
+            match (&w.image, &sim.cocotb) {
+                (Some(image), None) => {
+                    exists(&mut e, dir, &format!("{wk}.image"), image, &mut listed)
+                }
+                (None, None) => e.add(&format!("{wk}.image"), "a workload needs an image"),
+                (Some(_), Some(_)) => e.add(
+                    &format!("{wk}.image"),
+                    "a cocotb workload has no image: it names its tests",
+                ),
+                (None, Some(_)) => {}
+            }
+            if sim.cocotb.is_some() {
+                if w.tests.is_empty() {
+                    e.add(&format!("{wk}.tests"), "a cocotb workload needs tests");
+                }
+                if !matches!(w.pass, Pass::Cocotb { .. }) {
+                    e.add(
+                        &format!("{wk}.pass"),
+                        "a cocotb workload needs kind = \"cocotb\"",
+                    );
+                }
+            } else {
+                if !w.tests.is_empty() {
+                    e.add(&format!("{wk}.tests"), "only a cocotb variant has tests");
+                }
+                if matches!(w.pass, Pass::Cocotb { .. }) {
+                    e.add(&format!("{wk}.pass"), "kind = \"cocotb\" needs sim.cocotb");
+                }
+            }
+            for (i, t) in w.tests.iter().enumerate() {
+                if !is_py_ident(t) {
+                    e.add(
+                        &format!("{wk}.tests[{i}]"),
+                        format!("`{t}` is not a Python function name"),
+                    );
+                }
+            }
             for (i, s) in w.sources.iter().enumerate() {
                 exists(&mut e, dir, &format!("{wk}.sources[{i}]"), s, &mut listed);
             }
@@ -401,6 +476,7 @@ pub fn check_design(l: &Loaded) -> Vec<String> {
                     reference,
                     &mut listed,
                 ),
+                Pass::Cocotb { cases: 0 } => e.add(&format!("{wk}.pass.cases"), "must be above 0"),
                 Pass::Stdout { contains } | Pass::Uart { contains } if contains.is_empty() => {
                     e.add(&format!("{wk}.pass.contains"), "must not be empty")
                 }
@@ -463,6 +539,24 @@ fn placeholders_left(a: &str) -> bool {
         .replace("{image}", "")
         .replace("{dir}", "")
         .contains('{')
+}
+
+/// A Python identifier of the ASCII kind: what cocotb test functions and test modules are named.
+fn is_py_ident(s: &str) -> bool {
+    let mut c = s.chars();
+    c.next()
+        .is_some_and(|f| f.is_ascii_alphabetic() || f == '_')
+        && c.all(|x| x.is_ascii_alphanumeric() || x == '_')
+}
+
+/// `1ns/1ps`: a magnitude of 1, 10 or 100 and a unit, twice.
+pub fn valid_timescale(s: &str) -> bool {
+    let part = |p: &str| {
+        let t = p.trim_end_matches(|c: char| c.is_ascii_alphabetic());
+        let u = &p[t.len()..];
+        matches!(t, "1" | "10" | "100") && matches!(u, "s" | "ms" | "us" | "ns" | "ps" | "fs")
+    };
+    s.split_once('/').is_some_and(|(a, b)| part(a) && part(b))
 }
 
 fn is_id(s: &str) -> bool {
@@ -634,6 +728,7 @@ pub fn licence_matches(expr: &str, text: &str) -> bool {
         "SHL-0.51" => has("Solderpad Hardware License") && has("0.51"),
         "SHL-2.1" => has("Solderpad Hardware License") && has("version 2.1"),
         "ISC" => has("Permission to use, copy, modify, and/or distribute this software"),
+        "CERN-OHL-S-2.0" => has("CERN Open Hardware Licence Version 2 - Strongly Reciprocal"),
         _ => false,
     }
 }
@@ -816,6 +911,21 @@ timeout_s = 60
             "// SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1\n"
         ));
         assert!(!licence_matches("GPL-3.0-only", "some text"));
+    }
+
+    #[test]
+    fn cern_ohl_s_text_is_recognised() {
+        let text = "CERN Open Hardware Licence Version 2 - Strongly Reciprocal\n\nPreamble\n";
+        assert!(licence_matches("CERN-OHL-S-2.0", text));
+        assert!(!licence_matches(
+            "CERN-OHL-S-2.0",
+            "CERN Open Hardware Licence Version 2 - Permissive"
+        ));
+        assert!(!licence_matches("MIT", text));
+        assert_eq!(
+            unstated("CERN-OHL-S-2.0 AND MIT", &[text.to_string()]),
+            Some("MIT".into())
+        );
     }
 
     #[test]
@@ -1149,5 +1259,102 @@ timeout_s = 60
                 .any(|m| m.contains("source.commit") && m.contains("40 hex digits")),
             "{errs:?}"
         );
+    }
+
+    /// The good design as a cocotb variant: a test module, tests in the workload, a cocotb pass check.
+    fn cocotb_design() -> TempDir {
+        let t = good();
+        let d = t.path().join("designs/demo");
+        fs::create_dir_all(d.join("src/tb")).unwrap();
+        fs::write(d.join("src/tb/test_top.py"), "").unwrap();
+        edit(
+            &t,
+            "dut = \"tb.dut\"\n",
+            "dut = \"tb.dut\"\n\n[variant.sim.cocotb]\ndir = \"src/tb\"\nmodule = \"test_top\"\ntimescale = \"1ns/1ps\"\n",
+        );
+        edit(
+            &t,
+            "image = \"sim/w.bin\"\npass = { kind = \"exit_code\", value = 0 }\nmax_cycles = 100\ntimeout_s = 60",
+            "tests = [\"run_test\"]\npass = { kind = \"cocotb\", cases = 1 }\ntimeout_s = 60",
+        );
+        fs::remove_file(d.join("sim/w.bin")).unwrap();
+        t
+    }
+
+    #[test]
+    fn cocotb_design_passes() {
+        assert_eq!(run(&cocotb_design()), Vec::<String>::new());
+    }
+
+    #[test]
+    fn cocotb_workload_has_tests_and_a_cocotb_pass_check_and_no_image() {
+        let t = cocotb_design();
+        edit(&t, "tests = [\"run_test\"]\n", "");
+        assert!(run(&t)
+            .iter()
+            .any(|m| m.contains("workload[0].tests") && m.contains("needs tests")));
+        edit(
+            &t,
+            "pass = { kind = \"cocotb\", cases = 1 }",
+            "pass = { kind = \"exit_code\", value = 0 }",
+        );
+        assert!(run(&t)
+            .iter()
+            .any(|m| m.contains("workload[0].pass") && m.contains("cocotb")));
+        let t = cocotb_design();
+        edit(&t, "tests = ", "image = \"src/tb/test_top.py\"\ntests = ");
+        assert!(run(&t)
+            .iter()
+            .any(|m| m.contains("workload[0].image") && m.contains("no image")));
+        let t = cocotb_design();
+        edit(&t, "cases = 1", "cases = 0");
+        assert!(run(&t)
+            .iter()
+            .any(|m| m.contains("pass.cases") && m.contains("above 0")));
+    }
+
+    #[test]
+    fn cocotb_module_and_timescale_are_checked() {
+        let t = cocotb_design();
+        fs::remove_file(t.path().join("designs/demo/src/tb/test_top.py")).unwrap();
+        assert!(run(&t)
+            .iter()
+            .any(|m| m.contains("cocotb.module") && m.contains("test_top.py")));
+        let t = cocotb_design();
+        edit(&t, "timescale = \"1ns/1ps\"", "timescale = \"2ns/1ps\"");
+        assert!(run(&t)
+            .iter()
+            .any(|m| m.contains("cocotb.timescale") && m.contains("2ns/1ps")));
+        let t = cocotb_design();
+        edit(&t, "module = \"test_top\"", "module = \"test-top\"");
+        assert!(run(&t)
+            .iter()
+            .any(|m| m.contains("cocotb.module") && m.contains("Python module name")));
+        assert!(valid_timescale("100ps/1fs"));
+        assert!(!valid_timescale("1ns"));
+        assert!(!valid_timescale("1xs/1ps"));
+    }
+
+    #[test]
+    fn cocotb_pass_and_tests_need_a_cocotb_variant() {
+        let t = good();
+        edit(&t, "pass = {", "tests = [\"a\"]\npass = {");
+        assert!(run(&t)
+            .iter()
+            .any(|m| m.contains("workload[0].tests") && m.contains("only a cocotb variant")));
+        let t = good();
+        edit(
+            &t,
+            "kind = \"exit_code\", value = 0",
+            "kind = \"cocotb\", cases = 1",
+        );
+        assert!(run(&t)
+            .iter()
+            .any(|m| m.contains("workload[0].pass") && m.contains("needs sim.cocotb")));
+        let t = good();
+        edit(&t, "image = \"sim/w.bin\"\n", "");
+        assert!(run(&t)
+            .iter()
+            .any(|m| m.contains("workload[0].image") && m.contains("needs an image")));
     }
 }

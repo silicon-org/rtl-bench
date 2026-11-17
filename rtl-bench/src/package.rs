@@ -136,12 +136,19 @@ struct SimEntry {
     standalone: bool,
     include_dirs: Vec<String>,
     args: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cocotb_dir: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cocotb_module: Option<String>,
 }
 
 #[derive(Serialize)]
 struct WorkloadEntry {
     id: String,
-    image: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tests: Vec<String>,
     pass: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_cycles: Option<u64>,
@@ -155,6 +162,7 @@ fn pass_text(p: &Pass) -> String {
         Pass::Stdout { contains } => format!("stdout contains {contains:?}"),
         Pass::Uart { contains } => format!("uart contains {contains:?}"),
         Pass::Signature { reference } => format!("signature {reference}"),
+        Pass::Cocotb { cases } => format!("cocotb {cases} cases pass"),
     }
 }
 
@@ -204,6 +212,8 @@ fn variant_entry(l: &Loaded, v: &Variant) -> VariantEntry {
             standalone: v.sim.standalone,
             include_dirs: v.sim.include_dirs.iter().map(p).collect(),
             args: v.sim.args.clone(),
+            cocotb_dir: v.sim.cocotb.as_ref().map(|c| p(&c.dir)),
+            cocotb_module: v.sim.cocotb.as_ref().map(|c| c.module.clone()),
         },
         workloads: v
             .sim
@@ -211,7 +221,8 @@ fn variant_entry(l: &Loaded, v: &Variant) -> VariantEntry {
             .iter()
             .map(|w| WorkloadEntry {
                 id: w.id.clone(),
-                image: p(&w.image),
+                image: w.image.as_ref().map(p),
+                tests: w.tests.clone(),
                 pass: pass_text(&w.pass),
                 max_cycles: w.max_cycles,
                 timeout_s: w.timeout_s,

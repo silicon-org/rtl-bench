@@ -81,9 +81,20 @@ cycles_pattern = "Cycles: ([0-9]+)"      # optional regular expression with one 
 uart_file = "uart0.log"                  # file of the run directory with the UART text, for `uart` pass checks
 cycles_file = "perf.trace"               # optional: a file of the run directory that cycles_pattern reads instead of the output
 
+# Optional: a cocotb simulation. Upstream's Python tests drive the design (`top` is the cocotb toplevel), built with
+# Verilator by the makefiles of cocotb. files, include_dirs, defines, parameters and verilator_flags are those of the
+# build; args, prepare and uart_file are not used. A workload has no image: it names its tests.
+[variant.sim.cocotb]
+dir = "src/eth/tb/taxi_eth_phy_10g"      # directory of the test module, put on the Python path
+module = "test_taxi_eth_phy_10g"         # the Python module with the cocotb tests
+timescale = "1ns/1ps"                    # COCOTB_HDL_TIMEUNIT/COCOTB_HDL_TIMEPRECISION: 1, 10 or 100 and a unit, twice
+config = "${COCOTB_ENV}/bin/cocotb-config"   # optional: the cocotb-config program; default: `cocotb-config` of the PATH
+random_seed = 1                          # optional: COCOTB_RANDOM_SEED; without it cocotb picks a seed for each run
+
 [[variant.sim.workload]]
 id = "coremark"
-image = "sim/coremark.riscv"             # prebuilt, with the recipe in recipe/
+image = "sim/coremark.riscv"             # prebuilt, with the recipe in recipe/ (a cocotb variant has none)
+tests = ["run_test_rx"]                  # cocotb variants only: the test functions of the module to run; a parametrized test runs all its cases
 sources = ["src/coremark/core_main.c"]   # upstream files that the image is built from (optional)
 pass = { kind = "exit_code", value = 0 } # see below
 max_cycles = 20000000                    # optional: a limit for the cycle count; without it the count is not read
@@ -100,8 +111,11 @@ activity = { start = "roi_begin", stop = "roi_end" }   # markers for switching a
 | `stdout` | `contains` | the simulator exits with 0 and its output contains `contains` |
 | `uart` | `contains` | the simulator exits with 0 and the file `sim.uart_file` of the run directory contains `contains` |
 | `signature` | `reference` | the signature equals the reference file (parsed; `rtl-bench sim` does not run it yet) |
+| `cocotb` | `cases` | no test case of the `results.xml` of the run failed or errored, and exactly `cases` passed (cocotb lists the test cases that the filter leaves out, and those that upstream skips, as skipped; they do not count) |
 
 With `cycles_pattern`, `rtl-bench sim` also reads the cycle count from the output (or from `cycles_file`) and fails above `max_cycles`.
+
+With `sim.cocotb`, `rtl-bench sim` builds the model once with the cocotb makefiles (`build/<variant>/sim_build`), runs the workload with `COCOTB_TEST_FILTER` set to its `tests`, and reads `results.xml` (not only the exit code). The summary has the simulated time of the test cases that cocotb reports (`sim_time_ns`); there is no cycle count. Parameters that upstream's own makefile passes to the simulator go in `sim.parameters`.
 
 `period_ps` and the two delay fractions are optional. `rtl-bench sdc` fails with a message that names the clock or the missing key when one is not set; a variant without periods needs no `source` for them.
 
@@ -119,6 +133,7 @@ The bytes depend only on the commit and the version: entries are sorted by path,
 - Every listed file exists; every path is relative to the design directory and stays inside it.
 - Every file under `src/` is listed by some view or by `recipe/unused.txt` (`<path> <reason>` per line). A view lists a file by its file lists, `macros`, `support`, `sdc`, workload `image` and `sources`, licence files, or by being directly in one of its `include_dirs`.
 - `licence` matches the licence files: an `SPDX-License-Identifier:` line in a licence file decides; without one, the text of Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause and ISC is recognised. A vendored design without a licence file is an error. For an expression with `AND`, `OR` or `WITH`, every part must be stated by some licence file (`A WITH B`: by a line with exactly that expression, or by the texts of A and B); a source file that carries the notice can serve as the licence file of `MIT`. The `licence` of `[source]` covers everything vendored: every part of every dependency licence must be a part of it, and the licence files of the dependencies count as its licence files.
+- A cocotb variant: `cocotb.dir` is a directory with `<module>.py`, the timescale is valid, and every workload has `tests` (Python names), a `cocotb` pass check with `cases` above 0 and no `image`. Only a cocotb variant has `tests` or the `cocotb` pass check; every other workload has an `image`.
 - `period_ps` has only the keys of open PDKs; a `reference` record has a frequency above 0, a process and a source; a workload has `max_cycles` or `timeout_s`.
 - Every clock that has a period has a `source`, and a variant that sets a delay fraction has a `constraints.source`.
 - A `reference` design has no files under `src/`.

@@ -214,15 +214,39 @@ pub struct Sim {
     pub uart_file: Option<String>,
     /// File of the run directory that `cycles_pattern` reads instead of the output.
     pub cycles_file: Option<String>,
+    /// A cocotb simulation: upstream's Python tests drive the design, built with Verilator by the cocotb makefiles.
+    pub cocotb: Option<Cocotb>,
     #[serde(default)]
     pub workload: Vec<Workload>,
+}
+
+/// The cocotb flow of a variant. `Sim::top` is the cocotb toplevel; the files, defines, include directories,
+/// parameters and Verilator flags of the simulation are those of the build.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Cocotb {
+    /// Directory of the test module; it is put on the Python path.
+    pub dir: String,
+    /// Python module with the cocotb tests of upstream.
+    pub module: String,
+    /// Time unit and precision of the simulation, as `1ns/1ps` (COCOTB_HDL_TIMEUNIT and COCOTB_HDL_TIMEPRECISION).
+    pub timescale: String,
+    /// The `cocotb-config` program (`${NAME}` is expanded); without it, `cocotb-config` of the PATH.
+    pub config: Option<String>,
+    /// COCOTB_RANDOM_SEED; without it cocotb picks a seed for each run.
+    pub random_seed: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Workload {
     pub id: String,
-    pub image: String,
+    /// The program image; a cocotb variant has none.
+    pub image: Option<String>,
+    /// cocotb variants: the test functions of the module that this workload runs (a parametrized test counts with
+    /// all its cases).
+    #[serde(default)]
+    pub tests: Vec<String>,
     /// Upstream sources of the image.
     #[serde(default)]
     pub sources: Vec<String>,
@@ -247,10 +271,22 @@ pub struct Activity {
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Pass {
-    ExitCode { value: i32 },
-    Stdout { contains: String },
-    Uart { contains: String },
-    Signature { reference: String },
+    ExitCode {
+        value: i32,
+    },
+    Stdout {
+        contains: String,
+    },
+    Uart {
+        contains: String,
+    },
+    Signature {
+        reference: String,
+    },
+    /// cocotb: the results file has exactly `cases` test cases and all of them passed.
+    Cocotb {
+        cases: usize,
+    },
 }
 
 #[cfg(test)]

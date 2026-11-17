@@ -1,7 +1,7 @@
 //! `sim` (Verilator) and `elaborate` (slang).
 
 use crate::design::{find_variant, read_list, sim_files, Loaded};
-use crate::schema::{Pass, Variant, Workload};
+use crate::schema::{Cocotb, Pass, Variant, Workload};
 use regex::Regex;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
@@ -213,7 +213,316 @@ pub fn check_pass(
             }
         }
         Pass::Signature { .. } => Err("this kind of pass check is not implemented yet".into()),
+        Pass::Cocotb { .. } => Err("a cocotb pass check reads the results file".into()),
     }
+}
+
+/// The verdict of one cocotb test case.
+#[derive(Debug, PartialEq)]
+pub enum Verdict {
+    Pass,
+    Fail(String),
+    Skip,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Case {
+    pub name: String,
+    pub sim_time_ns: f64,
+    pub verdict: Verdict,
+}
+
+/// The test cases of a cocotb results file (JUnit XML as cocotb 2 writes it).
+pub fn parse_results(xml: &str) -> Result<Vec<Case>, String> {
+    let doc = roxmltree::Document::parse(xml).map_err(|e| format!("results file: {e}"))?;
+    let mut cases = Vec::new();
+    for t in doc.descendants().filter(|n| n.has_tag_name("testcase")) {
+        let name = t
+            .attribute("name")
+            .ok_or("results file: a testcase has no name")?
+            .to_string();
+        let sim_time_ns = t
+            .attribute("sim_time_ns")
+            .ok_or_else(|| format!("results file: `{name}` has no sim_time_ns"))?
+            .parse::<f64>()
+            .map_err(|e| format!("results file: sim_time_ns of `{name}`: {e}"))?;
+        let mut verdict = Verdict::Pass;
+        for c in t.children().filter(|c| c.is_element()) {
+            match c.tag_name().name() {
+                "failure" | "error" => {
+                    let msg = c
+                        .attribute("message")
+                        .map(str::to_string)
+                        .unwrap_or_else(|| c.text().unwrap_or("").trim().to_string());
+                    verdict = Verdict::Fail(msg);
+                }
+                "skipped" if verdict == Verdict::Pass => verdict = Verdict::Skip,
+                _ => {}
+            }
+        }
+        cases.push(Case {
+            name,
+            sim_time_ns,
+            verdict,
+        });
+    }
+    Ok(cases)
+}
+
+/// The pass check of a cocotb workload: no test case failed, and exactly `expected` passed. cocotb lists the test
+/// cases that the filter leaves out as skipped, and so are the ones that upstream skips; neither counts as passed.
+pub fn check_cocotb(expected: usize, cases: &[Case]) -> Result<(), String> {
+    for c in cases {
+        if let Verdict::Fail(m) = &c.verdict {
+            return Err(format!("test `{}` failed: {m}", c.name));
+        }
+    }
+    let passed = cases.iter().filter(|c| c.verdict == Verdict::Pass).count();
+    if passed != expected {
+        return Err(format!("{passed} test cases passed, expected {expected}"));
+    }
+    Ok(())
+}
+
+/// COCOTB_TEST_FILTER for the tests of a workload: `module.name`, with the cases of a parametrized test
+/// following a `/`.
+pub fn test_filter(module: &str, tests: &[String]) -> String {
+    let names: Vec<String> = tests.iter().map(|t| regex::escape(t)).collect();
+    format!("^{}\\.({})(/|$)", regex::escape(module), names.join("|"))
+}
+
+/// A word for a make variable that the shell of a recipe sees as one argument.
+fn make_word(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+        .replace('$', "$$")
+        .replace('#', "\\#")
+}
+
+/// The makefile of a cocotb variant: the variables of the cocotb makefiles, then their `Makefile.sim`.
+#[allow(clippy::too_many_arguments)]
+pub fn cocotb_makefile(
+    v: &Variant,
+    c: &Cocotb,
+    design_dir: &Path,
+    sim_build: &Path,
+    files: &[String],
+    config: &str,
+    jobs: &str,
+    filter: Option<&str>,
+) -> Result<String, String> {
+    let (unit, precision) = c
+        .timescale
+        .split_once('/')
+        .ok_or("cocotb.timescale: expected `1ns/1ps`")?;
+    let mut compile: Vec<String> = vec![
+        "--language".into(),
+        if v.synth.language == crate::schema::Language::Sv2017 {
+            "1800-2017".into()
+        } else {
+            "1364-2005".into()
+        },
+    ];
+    for d in v.synth.include_dirs.iter().chain(&v.sim.include_dirs) {
+        compile.push(format!("-I{}", design_dir.join(d).display()));
+    }
+    for (k, val) in sim_defines(v) {
+        compile.push(if val.is_empty() {
+            format!("+define+{k}")
+        } else {
+            format!("+define+{k}={val}")
+        });
+    }
+    for (k, val) in &v.sim.parameters {
+        compile.push(format!("-G{k}={val}"));
+    }
+    for f in &v.sim.verilator_flags {
+        compile.push(expand_env(f, design_dir)?);
+    }
+    let mut sources = Vec::new();
+    for f in files {
+        let abs = design_dir.join(f);
+        let abs = abs.to_string_lossy().into_owned();
+        if abs.contains(char::is_whitespace) {
+            return Err(format!("`{abs}`: a space in a path is not supported"));
+        }
+        sources.push(abs);
+    }
+    let mut m = String::from(
+        "# Generated by `rtl-bench sim`: the cocotb makefiles with the build of the variant.\n",
+    );
+    m += "SIM = verilator\nTOPLEVEL_LANG = verilog\n";
+    m += &format!("COCOTB_TOPLEVEL = {}\n", v.sim.top);
+    m += &format!("COCOTB_TEST_MODULES = {}\n", c.module);
+    m += &format!("COCOTB_HDL_TIMEUNIT = {unit}\nCOCOTB_HDL_TIMEPRECISION = {precision}\n");
+    m += &format!("SIM_BUILD = {}\n", sim_build.display());
+    m += &format!("VERILOG_SOURCES = {}\n", sources.join(" "));
+    m += &format!(
+        "COMPILE_ARGS = {}\n",
+        compile
+            .iter()
+            .map(|a| make_word(a))
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    m += &format!("BUILD_ARGS = -j {jobs} OPT_FAST=-O2 OPT_SLOW=-O1 OPT_GLOBAL=-O2\n");
+    if v.sim.verilator.is_some() {
+        let prog = verilator_program(v, design_dir)?;
+        let bin = Path::new(&prog)
+            .parent()
+            .ok_or("sim.verilator has no directory")?;
+        m += &format!("VERILATOR_BIN_DIR = {}\n", bin.display());
+    }
+    if let Some(f) = filter {
+        // the makefile of cocotb puts it into a shell command unquoted
+        m += &format!("COCOTB_TEST_FILTER = {}\n", make_word(f));
+    }
+    m += &format!("include $(shell {config} --makefiles)/Makefile.sim\n");
+    Ok(m)
+}
+
+/// Build the model of a cocotb variant and run one workload: the tests of upstream against the design.
+fn run_cocotb(
+    root: &Path,
+    l: &Loaded,
+    v: &Variant,
+    full_id: &str,
+    w: &Workload,
+    c: &Cocotb,
+) -> Result<Outcome, String> {
+    let Pass::Cocotb { cases: expected } = &w.pass else {
+        return Err("a cocotb workload needs kind = \"cocotb\"".into());
+    };
+    let files = sim_files(&l.dir, v)?;
+    let mdir = root.join("build").join(full_id);
+    let sim_build = mdir.join("sim_build");
+    let run_dir = mdir.join("run").join(&w.id);
+    let _ = fs::remove_dir_all(&run_dir);
+    fs::create_dir_all(&run_dir).map_err(|e| format!("{}: {e}", run_dir.display()))?;
+    let config = match &c.config {
+        Some(p) => expand_env(p, &l.dir)?,
+        None => "cocotb-config".to_string(),
+    };
+    let makefile = cocotb_makefile(v, c, &l.dir, &sim_build, &files, &config, &jobs(), None)?;
+    let filter = test_filter(&c.module, &w.tests);
+    let run_makefile = cocotb_makefile(
+        v,
+        c,
+        &l.dir,
+        &sim_build,
+        &files,
+        &config,
+        &jobs(),
+        Some(&filter),
+    )?;
+    // a model of other flags or files is stale: start again
+    let saved = mdir.join("Makefile");
+    if fs::read_to_string(&saved).ok().as_deref() != Some(makefile.as_str()) {
+        let _ = fs::remove_dir_all(&sim_build);
+        fs::write(&saved, &makefile).map_err(|e| format!("{}: {e}", saved.display()))?;
+    }
+    fs::write(run_dir.join("Makefile"), &run_makefile)
+        .map_err(|e| format!("{}: {e}", run_dir.display()))?;
+
+    let mut path: Vec<PathBuf> = Vec::new();
+    if let Some(dir) = Path::new(&config)
+        .parent()
+        .filter(|d| !d.as_os_str().is_empty())
+    {
+        path.push(dir.to_path_buf());
+    }
+    path.extend(
+        std::env::var_os("PATH")
+            .map(|p| std::env::split_paths(&p).collect::<Vec<_>>())
+            .unwrap_or_default(),
+    );
+    let path = std::env::join_paths(path).map_err(|e| format!("PATH: {e}"))?;
+    let mut py_path: Vec<PathBuf> = vec![l.dir.join(&c.dir)];
+    py_path.extend(
+        std::env::var_os("PYTHONPATH")
+            .map(|p| std::env::split_paths(&p).collect::<Vec<_>>())
+            .unwrap_or_default(),
+    );
+    let py_path = std::env::join_paths(py_path).map_err(|e| format!("PYTHONPATH: {e}"))?;
+    let make = |target: Option<&str>| {
+        let mut cmd = Command::new("make");
+        cmd.arg("-C")
+            .arg(&run_dir)
+            .env("PATH", &path)
+            .env("PYTHONPATH", &py_path)
+            // the test modules are in the vendored tree: no .pyc files there
+            .env("PYTHONDONTWRITEBYTECODE", "1");
+        if let Some(seed) = c.random_seed {
+            cmd.env("COCOTB_RANDOM_SEED", seed.to_string());
+        }
+        if let Some(t) = target {
+            cmd.arg(t);
+        }
+        cmd
+    };
+    eprintln!(
+        "building {full_id} with verilator and the cocotb makefiles ({} files, -j {})",
+        files.len(),
+        jobs()
+    );
+    let t = Instant::now();
+    let build_log = mdir.join("build.log");
+    let (status, _, _) = run_logged(
+        &mut make(Some(&sim_build.join("Vtop").to_string_lossy())),
+        &build_log,
+        None,
+    )
+    .map_err(|e| format!("cannot run make: {e}"))?;
+    if !status.success() {
+        let text = fs::read_to_string(&build_log).unwrap_or_default();
+        let lines: Vec<&str> = text.lines().collect();
+        let tail = lines[lines.len().saturating_sub(40)..].join("\n");
+        return Err(format!(
+            "the build of the model failed ({status}); the end of {}:\n{tail}",
+            build_log.display()
+        ));
+    }
+    eprintln!("built in {:.1} s", t.elapsed().as_secs_f64());
+
+    let log_path = run_dir.join("output.log");
+    let (_status, timed_out, seconds) = run_logged(&mut make(None), &log_path, w.timeout_s)
+        .map_err(|e| format!("cannot run make: {e}"))?;
+    let mut summary = format!("{full_id} {}: run time {seconds:.2} s", w.id);
+    let result = if timed_out {
+        Err(format!(
+            "timeout: no result after {} s (timeout_s)",
+            w.timeout_s.unwrap_or(0)
+        ))
+    } else {
+        fs::read_to_string(run_dir.join("results.xml"))
+            .map_err(|e| {
+                format!(
+                    "results.xml: {e} (the simulation wrote no results; see {})",
+                    log_path.display()
+                )
+            })
+            .and_then(|x| parse_results(&x))
+            .and_then(|cases| {
+                for k in cases.iter().filter(|k| k.verdict != Verdict::Skip) {
+                    println!("  {:?} {} ({} ns)", k.verdict, k.name, k.sim_time_ns);
+                }
+                summary += &format!(
+                    ", {:.1} ns of simulated time in {} test cases",
+                    cases.iter().map(|k| k.sim_time_ns).sum::<f64>(),
+                    cases.iter().filter(|k| k.verdict == Verdict::Pass).count()
+                );
+                check_cocotb(*expected, &cases)
+            })
+    };
+    Ok(match result {
+        Ok(()) => Outcome {
+            passed: true,
+            message: format!("PASS {summary}"),
+        },
+        Err(m) => Outcome {
+            passed: false,
+            message: format!("FAIL {summary}: {m}"),
+        },
+    })
 }
 
 /// The cycle count that the pattern finds in the output.
@@ -224,6 +533,34 @@ pub fn find_cycles(pattern: &str, output: &str) -> Result<u64, String> {
         .ok_or("the output has no cycle count (cycles_pattern did not match)")?;
     c[1].parse::<u64>()
         .map_err(|e| format!("cycle count `{}`: {e}", &c[1]))
+}
+
+/// Run a command with stdout and stderr in a log file, killing it after `timeout_s` seconds.
+/// Returns the exit status, whether the timeout hit, and the wall time in seconds.
+fn run_logged(
+    cmd: &mut Command,
+    log_path: &Path,
+    timeout_s: Option<u64>,
+) -> Result<(std::process::ExitStatus, bool, f64), String> {
+    let log = File::create(log_path).map_err(|e| format!("{}: {e}", log_path.display()))?;
+    cmd.stdout(log.try_clone().map_err(|e| e.to_string())?)
+        .stderr(log);
+    let t = Instant::now();
+    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+    let mut timed_out = false;
+    let status = loop {
+        if let Some(st) = child.try_wait().map_err(|e| e.to_string())? {
+            break st;
+        }
+        if timeout_s.is_some_and(|s| t.elapsed().as_secs() >= s) {
+            // our own child, not a pattern match
+            let _ = child.kill();
+            timed_out = true;
+            break child.wait().map_err(|e| e.to_string())?;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    Ok((status, timed_out, t.elapsed().as_secs_f64()))
 }
 
 pub fn run_workload(root: &Path, full_id: &str, workload: &str) -> Result<Outcome, String> {
@@ -244,16 +581,20 @@ pub fn run_workload(root: &Path, full_id: &str, workload: &str) -> Result<Outcom
     if matches!(w.pass, Pass::Signature { .. }) {
         return Err("this kind of pass check is not implemented yet".into());
     }
+    if let Some(c) = &v.sim.cocotb {
+        return run_cocotb(root, &l, v, full_id, w, c);
+    }
     let exe = build(root, &l, v, full_id)?;
 
     let run_dir = root.join("build").join(full_id).join("run").join(&w.id);
     let _ = fs::remove_dir_all(&run_dir);
     fs::create_dir_all(&run_dir).map_err(|e| format!("{}: {e}", run_dir.display()))?;
-    let image_name = Path::new(&w.image)
+    let w_image = w.image.as_ref().ok_or("the workload has no image")?;
+    let image_name = Path::new(w_image)
         .file_name()
         .ok_or("workload image has no file name")?;
     let image = run_dir.join(image_name);
-    fs::copy(l.dir.join(&w.image), &image).map_err(|e| format!("{}: {e}", w.image))?;
+    fs::copy(l.dir.join(w_image), &image).map_err(|e| format!("{w_image}: {e}"))?;
 
     let mut cmd = Command::new(&exe);
     cmd.current_dir(&run_dir);
@@ -294,27 +635,8 @@ pub fn run_workload(root: &Path, full_id: &str, workload: &str) -> Result<Outcom
         );
     }
     let log_path = run_dir.join("output.log");
-    let log = File::create(&log_path).map_err(|e| format!("{}: {e}", log_path.display()))?;
-    cmd.stdout(log.try_clone().map_err(|e| e.to_string())?)
-        .stderr(log);
-    let t = Instant::now();
-    let mut child = cmd
-        .spawn()
+    let (status, timed_out, seconds) = run_logged(&mut cmd, &log_path, w.timeout_s)
         .map_err(|e| format!("cannot run {}: {e}", exe.display()))?;
-    let mut timed_out = false;
-    let status = loop {
-        if let Some(st) = child.try_wait().map_err(|e| e.to_string())? {
-            break st;
-        }
-        if w.timeout_s.is_some_and(|s| t.elapsed().as_secs() >= s) {
-            // our own child, not a pattern match
-            let _ = child.kill();
-            timed_out = true;
-            break child.wait().map_err(|e| e.to_string())?;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(20));
-    };
-    let seconds = t.elapsed().as_secs_f64();
     let output =
         String::from_utf8_lossy(&fs::read(&log_path).map_err(|e| e.to_string())?).into_owned();
     print!("{output}");
@@ -506,5 +828,141 @@ mod tests {
         assert_eq!(find_cycles(r"Cnt\[ ?0\] = +(\d+) Mcycle", out), Ok(5712));
         let err = find_cycles(r"Cycles: (\d+)", out).unwrap_err();
         assert!(err.contains("no cycle count"), "{err}");
+    }
+
+    const RESULTS: &str = r#"<testsuites name="results"><testsuite name="all" package="all">
+<property name="random_seed" value="1" />
+<testcase name="run_test_rx/ifg=12" classname="test_x" sim_time_ns="20806.4" />
+<testcase name="run_test_tx" classname="test_x" sim_time_ns="16192.0" />
+</testsuite></testsuites>"#;
+
+    #[test]
+    fn cocotb_results_are_read() {
+        let cases = parse_results(RESULTS).unwrap();
+        assert_eq!(cases.len(), 2);
+        assert_eq!(cases[0].name, "run_test_rx/ifg=12");
+        assert_eq!(cases[0].sim_time_ns, 20806.4);
+        assert_eq!(cases[1].verdict, Verdict::Pass);
+        assert!(check_cocotb(2, &cases).is_ok());
+    }
+
+    #[test]
+    fn a_failed_case_fails_the_workload() {
+        let failed = RESULTS.replace(
+            "sim_time_ns=\"16192.0\" />",
+            "sim_time_ns=\"16192.0\"><failure message=\"AssertionError: bad\" /></testcase>",
+        );
+        let cases = parse_results(&failed).unwrap();
+        let err = check_cocotb(2, &cases).unwrap_err();
+        assert!(
+            err.contains("run_test_tx") && err.contains("AssertionError: bad"),
+            "{err}"
+        );
+        let errored = RESULTS.replace(
+            "sim_time_ns=\"16192.0\" />",
+            "sim_time_ns=\"16192.0\"><error>boom</error></testcase>",
+        );
+        let err = check_cocotb(2, &parse_results(&errored).unwrap()).unwrap_err();
+        assert!(err.contains("boom"), "{err}");
+    }
+
+    #[test]
+    fn the_number_of_passed_cases_must_match() {
+        let cases = parse_results(RESULTS).unwrap();
+        let err = check_cocotb(3, &cases).unwrap_err();
+        assert!(err.contains("2 test cases passed, expected 3"), "{err}");
+        let err = check_cocotb(1, &[]).unwrap_err();
+        assert!(err.contains("0 test cases passed"), "{err}");
+    }
+
+    #[test]
+    fn skipped_cases_are_the_ones_left_out_and_do_not_count() {
+        let skipped = RESULTS.replace(
+            "sim_time_ns=\"16192.0\" />",
+            "sim_time_ns=\"0\"><skipped /></testcase>",
+        );
+        let cases = parse_results(&skipped).unwrap();
+        assert_eq!(cases[1].verdict, Verdict::Skip);
+        assert!(check_cocotb(1, &cases).is_ok());
+        let err = check_cocotb(2, &cases).unwrap_err();
+        assert!(err.contains("1 test cases passed, expected 2"), "{err}");
+    }
+
+    #[test]
+    fn broken_results_are_errors() {
+        assert!(parse_results("<testsuites>")
+            .unwrap_err()
+            .contains("results file"));
+        let err = parse_results("<r><testcase name=\"a\"/></r>").unwrap_err();
+        assert!(err.contains("sim_time_ns"), "{err}");
+    }
+
+    #[test]
+    fn test_filter_matches_names_and_their_parametrized_cases() {
+        let f = test_filter(
+            "test_a.b",
+            &["run_test_rx".to_string(), "run_test_tx".to_string()],
+        );
+        let re = Regex::new(&f).unwrap();
+        assert!(re.is_match("test_a.b.run_test_rx"));
+        assert!(re.is_match("test_a.b.run_test_rx/ifg=12"));
+        assert!(re.is_match("test_a.b.run_test_tx"));
+        assert!(!re.is_match("test_a.b.run_test_rx_frame_sync"));
+        assert!(!re.is_match("test_axb.run_test_rx"));
+    }
+
+    #[test]
+    fn make_words_survive_make_and_the_shell() {
+        assert_eq!(make_word("-GA=1"), "'-GA=1'");
+        assert_eq!(make_word("-GS=\"MAC\""), "'-GS=\"MAC\"'");
+        assert_eq!(make_word("a$b#c"), "'a$$b\\#c'");
+        assert_eq!(make_word("it's"), "'it'\\''s'");
+    }
+
+    #[test]
+    fn cocotb_makefile_carries_the_build_of_the_variant() {
+        let v = variant_with_sim(
+            "parameters = { DATA_W = \"64\" }\ndefines = { X = \"\" }\nverilator_flags = [\"-Wno-fatal\"]\n\
+             [sim.cocotb]\ndir = \"tb\"\nmodule = \"test_t\"\ntimescale = \"1ns/1ps\"\n",
+        );
+        let c = v.sim.cocotb.as_ref().unwrap();
+        let m = cocotb_makefile(
+            &v,
+            c,
+            Path::new("/d"),
+            Path::new("/b/sim_build"),
+            &["src/a.sv".to_string(), "src/b.sv".to_string()],
+            "cocotb-config",
+            "4",
+            Some("^test_t\\.(run_test)(/|$)"),
+        )
+        .unwrap();
+        for want in [
+            "COCOTB_TOPLEVEL = t\n",
+            "COCOTB_TEST_MODULES = test_t\n",
+            "COCOTB_HDL_TIMEUNIT = 1ns\nCOCOTB_HDL_TIMEPRECISION = 1ps\n",
+            "SIM_BUILD = /b/sim_build\n",
+            "VERILOG_SOURCES = /d/src/a.sv /d/src/b.sv\n",
+            "'-GDATA_W=64'",
+            "'-Wno-fatal'",
+            "BUILD_ARGS = -j 4 ",
+            "COCOTB_TEST_FILTER = '^test_t\\.(run_test)(/|$$)'\n",
+            "include $(shell cocotb-config --makefiles)/Makefile.sim\n",
+        ] {
+            assert!(m.contains(want), "missing {want:?} in\n{m}");
+        }
+        assert!(!m.contains("VERILATOR_BIN_DIR"));
+        let err = cocotb_makefile(
+            &v,
+            c,
+            Path::new("/a b"),
+            Path::new("/b"),
+            &["x.sv".to_string()],
+            "cocotb-config",
+            "4",
+            None,
+        )
+        .unwrap_err();
+        assert!(err.contains("space"), "{err}");
     }
 }
