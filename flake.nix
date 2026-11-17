@@ -252,6 +252,9 @@
             wallyShims
             # the build.sh of gemmini-rocc-tests runs autoconf for its Makefile
             autoconf
+            # Chipyard installs the espresso logic minimizer (a submodule of constellation) with cmake; the Chisel
+            # decoder of Saturn runs out of memory without it
+            cmake
           ];
           # uv runs upstream scripts (elf2hex) with the Python above, never downloads one.
           UV_PYTHON_DOWNLOADS = "never";
