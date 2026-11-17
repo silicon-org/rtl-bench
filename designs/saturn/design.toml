@@ -1,0 +1,186 @@
+[design]
+id = "saturn"
+name = "Saturn"
+description = "RISC-V Vector (RVV 1.0) unit with a 256-bit VLEN and a 128-bit datapath, attached to a Rocket core in the Chipyard SoC, as Chisel generates it."
+
+[source]
+repository = "https://github.com/ucb-bar/chipyard"
+commit = "157dd69e49b9866be2bf8db390ee78bc38cd4438"
+mode = "vendored"
+licence = "BSD-3-Clause AND Apache-2.0 AND BSD-2-Clause"
+licence_files = ["licences/chipyard/LICENSE", "licences/chipyard/LICENSE.SiFive"]
+
+# The repositories whose code is in the generated RTL (the source locators of the Verilog name their
+# files: saturn, rocket-chip, the Chisel library, diplomacy, inclusive-cache, testchipip, hardfloat,
+# chipyard, rocket-chip-blocks). The commits are those of the submodules of the Chipyard tag.
+
+# Saturn: its Scala generators, whose output is the vector unit (decoder, sequencers, load/store and
+# execution paths) and its Rocket integration. The LICENSE has the Berkeley BSD-3-Clause text. Chipyard
+# compiles Saturn against ucb-bar/shuttle, which has no licence file: no code of it is in the output (no
+# module, source locator or string of it in the generated files).
+[[source.dependency]]
+repository = "https://github.com/ucb-bar/saturn-vectors"
+commit = "8c5115c1900432433c6f68f1039fc482b24413d6"
+licence = "BSD-3-Clause"
+licence_files = ["licences/saturn/LICENSE"]
+
+[[source.dependency]]
+repository = "https://github.com/chipsalliance/rocket-chip"
+commit = "ece7b9ad544b07df39cd13b6fd7236562a26355d"
+licence = "BSD-3-Clause AND Apache-2.0"
+licence_files = ["licences/rocket-chip/LICENSE.Berkeley", "licences/rocket-chip/LICENSE.jtag", "licences/rocket-chip/LICENSE.SiFive"]
+
+[[source.dependency]]
+repository = "https://github.com/ucb-bar/berkeley-hardfloat"
+commit = "0ecaef097ce2accbd16a61613699450ed5533f29"
+licence = "BSD-3-Clause"
+licence_files = ["licences/hardfloat/LICENSE"]
+
+[[source.dependency]]
+repository = "https://github.com/ucb-bar/testchipip"
+commit = "555ff3fbc12f81a8feff7a4801930fb384ddd2ae"
+licence = "BSD-3-Clause"
+licence_files = ["licences/testchipip/LICENSE"]
+
+[[source.dependency]]
+repository = "https://github.com/chipsalliance/rocket-chip-blocks"
+commit = "f8c7fddbd7639b15fefc968af59fcc4a8f7df73b"
+licence = "Apache-2.0"
+licence_files = ["licences/rocket-chip-blocks/LICENSE"]
+
+[[source.dependency]]
+repository = "https://github.com/chipsalliance/rocket-chip-inclusive-cache"
+commit = "27df9284e60136a6f7f1b19224dfbe99d112ea77"
+licence = "Apache-2.0"
+licence_files = ["licences/rocket-chip-inclusive-cache/LICENSE"]
+
+[[source.dependency]]
+repository = "https://github.com/chipsalliance/diplomacy"
+commit = "fe5e131d4fc8adec14a3ce4a4935bb5c0a269871"
+licence = "Apache-2.0"
+licence_files = ["licences/diplomacy/LICENSE.SiFive"]
+
+# Chisel 6.7.0 (tag v6.7.0): the library modules (Queue, Arbiter, ...) in the output.
+[[source.dependency]]
+repository = "https://github.com/chipsalliance/chisel"
+commit = "8db8c1e063c22440c6fcbc61ea7e8923a969ad15"
+licence = "Apache-2.0"
+licence_files = ["licences/chisel/LICENSE"]
+
+# Compiled into the simulator only (tools/DRAMSim2, as Chipyard builds it, without TraceBasedSim.cpp, its main).
+[[source.dependency]]
+repository = "https://github.com/firesim/DRAMSim2"
+commit = "44322e2f935d7dac83b7adf8dd270b41a54c6acb"
+licence = "BSD-2-Clause"
+licence_files = ["src/DRAMSim2/Bank.cpp"]
+
+[[variant]]
+id = "rocketv256d128"
+description = "One Rocket core with one Saturn vector unit, VLEN 256 and a 128-bit datapath (the reference parameters): chipyard.REFV256D128RocketConfig (saturn.rocket.WithRocketVectorUnit(256, 128, VectorParams.refParams) ++ WithSystemBusWidth(128) ++ WithNHugeCores(1) ++ AbstractConfig) on the TestHarness."
+
+# Synthesis top: ChipTop, the chip of the Chipyard flow (its VLSI flow, vlsi/, takes ChipTop; the
+# TestHarness is the testbench around it). The Verilog is generated, once, by Chipyard's own flow: see
+# recipe/generate.sh and recipe/README.md. The file list is the module list of ChipTop that the flow
+# writes (top.f), the black boxes of the DUT (clock gate, IO cells, plusarg reader) and the memories.
+[variant.synth]
+top = "ChipTop"
+language = "sv-2017"
+files = "variants/rocketv256d128/synth.f"
+include_dirs = ["src/generated"]
+defines = { SYNTHESIS = "1" }
+# Some of the generated files (the black boxes) have a `timescale and the others do not.
+slang_flags = ["--timescale=1ns/1ps"]
+# The memories of the chip as Chipyard writes them for the simulation and as the VLSI flow would
+# replace them by SRAM macros: the *_ext modules of the MacroCompiler (--mode synflops, flop arrays
+# with the ports of the macros; the 7 memories of the .top.mems.conf of the run).
+macros = [
+  { module = "cc_dir_ext", model = "src/generated/chipyard.harness.TestHarness.REFV256D128RocketConfig.top.mems.v" },
+  { module = "cc_banks_0_ext", model = "src/generated/chipyard.harness.TestHarness.REFV256D128RocketConfig.top.mems.v" },
+  { module = "rockettile_dcache_data_arrays_0_ext", model = "src/generated/chipyard.harness.TestHarness.REFV256D128RocketConfig.top.mems.v" },
+  { module = "rockettile_dcache_tag_array_ext", model = "src/generated/chipyard.harness.TestHarness.REFV256D128RocketConfig.top.mems.v" },
+  { module = "rockettile_icache_tag_array_ext", model = "src/generated/chipyard.harness.TestHarness.REFV256D128RocketConfig.top.mems.v" },
+  { module = "rockettile_icache_data_arrays_0_ext", model = "src/generated/chipyard.harness.TestHarness.REFV256D128RocketConfig.top.mems.v" },
+  { module = "mem_ext", model = "src/generated/chipyard.harness.TestHarness.REFV256D128RocketConfig.top.mems.v" },
+]
+
+# No period and no I/O delays. ChipTop has the clock inputs clock_uncore (the SoC, the core and the vector unit), jtag_TCK and
+# serial_tl_0_clock_in; reset_io is the reset.
+[[variant.clock]]
+name = "uncore_clk"
+port = "clock_uncore"
+
+[[variant.clock]]
+name = "jtag_tck"
+port = "jtag_TCK"
+
+[[variant.clock]]
+name = "serial_tl_clk"
+port = "serial_tl_0_clock_in"
+
+[variant.constraints]
+resets = ["reset_io"]
+
+# Simulation: Chipyard's Verilator build (sims/verilator, make verilog and the command that make -n
+# shows for the simulator), with the files of the same run: TestDriver, the TestHarness, the DPI models
+# (SimDRAM, SimTSI, SimJTAG, SimUART and the host code of testchipip) and DRAMSim2. libfesvr and libriscv
+# are Spike's (the nix shell: CY_SPIKE).
+[variant.sim]
+simulator = "verilator"
+top = "TestDriver"
+standalone = true
+files = "variants/rocketv256d128/sim.f"
+include_dirs = ["src/generated", "src/DRAMSim2"]
+undefine = ["SYNTHESIS"]
+defines = { CLOCK_PERIOD = "1.0", RESET_DELAY = "777.7", PRINTF_COND = "TestDriver.printf_cond", STOP_COND = "!TestDriver.reset", MODEL = "TestHarness", RANDOMIZE_MEM_INIT = "", RANDOMIZE_REG_INIT = "", RANDOMIZE_GARBAGE_ASSIGN = "", RANDOMIZE_INVALID_ASSIGN = "", VERILATOR = "" }
+verilator_flags = [
+  "--exe", "--main", "--timing", "--vpi", "--threads", "1", "--threads-dpi", "all", "-O3",
+  "--x-assign", "fast", "--x-initial", "fast", "--output-split", "10000", "--output-split-cfuncs", "100",
+  "--assert", "-Wno-fatal", "--timescale", "1ns/1ps", "--max-num-width", "1048576",
+  "-CFLAGS", "-O3 -std=c++17 -DVERILATOR -I${CY_SPIKE}/include -I${DESIGN_DIR}/src/DRAMSim2 -I${DESIGN_DIR}/src/generated",
+  "-LDFLAGS", "-L${CY_SPIKE}/lib -Wl,-rpath,${CY_SPIKE}/lib -lriscv -lfesvr",
+]
+dut = "TestDriver.testHarness.chiptop0"
+# the arguments of Chipyard's run-binary: +permissive <sim flags> +verbose +permissive-off <binary>;
+# +verbose makes the TestDriver print "*** PASSED *** Completed after N simulation cycles"
+cycles_pattern = 'Completed after +([0-9]+) simulation cycles'
+args = ["+permissive", "+max-cycles=50000000", "+verbose", "+permissive-off", "{image}"]
+
+# max_cycles: about ten times the cycles that `rtl-bench sim` printed (NAS, Verilator 5.052, one thread):
+# rv64ui-p-simple 30696 cycles, vec-strlen 666786, vec-mixed_width_mask 1041576, vec-igemm 8123636. The cycles
+# are those of the whole simulation, with the boot and the printf of the runtime. The vector programs are
+# benchmarks of saturn-vectors (benchmarks/), unmodified; each checks its own result and returns a nonzero
+# code on a difference, so `*** PASSED ***` means the check held. The simulator runs at about 13 to 17 k
+# cycles/s, because `+verbose` also switches on the commit log of the core (one line per instruction), which
+# `rtl-bench sim` keeps in memory.
+[[variant.sim.workload]]
+id = "rv64ui-p-simple"
+image = "sim/rv64ui-p-simple"
+pass = { kind = "stdout", contains = "*** PASSED ***" }
+max_cycles = 310000
+timeout_s = 600
+
+# vec-strlen: a strlen with vector loads on a 444 byte string, called at the offsets 0, 15, 30 ..., each result
+# compared with the length of the rest of the string.
+[[variant.sim.workload]]
+id = "vec-strlen"
+image = "sim/vec-strlen"
+pass = { kind = "stdout", contains = "*** PASSED ***" }
+max_cycles = 6700000
+timeout_s = 600
+
+# vec-mixed_width_mask: b[i] = (a[i] < 5) ? c[i] : 1 with an 8 bit predicate and 32 bit masked loads (the mixed
+# element width mask example of the RVV specification), compared with the gold data.
+[[variant.sim.workload]]
+id = "vec-mixed_width_mask"
+image = "sim/vec-mixed_width_mask"
+pass = { kind = "stdout", contains = "*** PASSED ***" }
+max_cycles = 10500000
+timeout_s = 600
+
+# vec-igemm: int64 matrix products of 4x4 up to 64x64 (the Ara suite), the last compared with the gold matrix.
+[[variant.sim.workload]]
+id = "vec-igemm"
+image = "sim/vec-igemm"
+pass = { kind = "stdout", contains = "*** PASSED ***" }
+max_cycles = 81500000
+timeout_s = 3600
