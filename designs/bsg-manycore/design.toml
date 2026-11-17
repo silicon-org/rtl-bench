@@ -1,0 +1,411 @@
+[design]
+id = "bsg-manycore"
+name = "BSG Manycore"
+description = "Tiled manycore of RV32IMAF vanilla cores on a 2D mesh with half-ruche links and cache banks on the north and south edges."
+
+[source]
+repository = "https://github.com/bespoke-silicon-group/bsg_manycore"
+commit = "aa62185eca7623bf270c361e5f663676b2c89cd2"
+mode = "vendored"
+# BSG Manycore SHL-0.51 (LICENSE); BaseJump STL SHL-0.51; HardFloat BSD-3-Clause; DRAMsim3 MIT.
+licence = "SHL-0.51 AND BSD-3-Clause AND MIT"
+licence_files = ["src/bsg_manycore/LICENSE"]
+
+# The README of bsg_manycore asks for a basejump_stl checkout next to it and pins none (.gitlab-ci.yml clones branch
+# master); this is master at the last commit before the pinned commit of bsg_manycore (2026-11-16).
+[[source.dependency]]
+repository = "https://github.com/bespoke-silicon-group/basejump_stl"
+commit = "3904f06a907108107b2fd2f54364a28a2ca27e10"
+licence = "SHL-0.51"
+licence_files = ["src/basejump_stl/LICENSE", "src/bsg_manycore/LICENSE"]
+
+# imports/HardFloat of bsg_manycore: the floating point units of the vanilla core (arch_filelist.mk).
+[[source.dependency]]
+repository = "https://github.com/bsg-external/HardFloat"
+commit = "5b7d5fe2df7e297b5ba095b3eb8a9517dc2e9d88"
+licence = "BSD-3-Clause"
+licence_files = ["src/bsg_manycore/imports/HardFloat/COPYING.txt"]
+
+# imports/DRAMSim3 of basejump_stl (the gitlink of the pinned commit): the C++ model that sim_filelist.mk compiles
+# into the simulator. The machines of the variants use the test memory, which does not call it.
+[[source.dependency]]
+repository = "https://github.com/bsg-external/DRAMsim3"
+commit = "0bd141a8d6b606e11c2aea6cf605a62853c60e74"
+licence = "MIT"
+licence_files = ["src/basejump_stl/imports/DRAMSim3/LICENSE"]
+
+[[variant]]
+id = "pod_1x1_4x2y"
+description = "Machine pod_1x1_4X2Y, the machine of upstream's Verilator flow: one pod of 4 x 2 compute tiles (8 vanilla cores), 4 vcache banks on each of the north and south edges, half-ruche network with ruche factor 3."
+
+# Synthesis top: bsg_manycore_pod_ruche_array, the DUT that the testbench of upstream instantiates for the network
+# e_network_half_ruche_x (testbenches/common/v/bsg_nonsynth_manycore_testbench.sv, instance DUT). The parameters are
+# those that the testbench computes from machines/pod_1x1_4X2Y/Makefile.machine.include (spmd_testbench.sv, with the
+# mem and network configurations of the machine): the dimensions, coordinate widths, ruche factors and vcache geometry
+# come from the machine file, the rest are the defaults of spmd_testbench.sv (dmem 1024 words, icache 1024 entries
+# with a 12 bit tag and 4 word blocks, 32 bit data); pod_*_cord_width_p = *_cord_width_p - clog2(tiles), as there;
+# wh_cid_width_p = clog2(2 * wh_ruche_factor_p), wh_len_width_p = clog2(2 + block bits / dma width) and vcache_size_p
+# = sets * ways * block words, as there. See recipe/README.md.
+[variant.synth]
+top = "bsg_manycore_pod_ruche_array"
+language = "sv-2017"
+files = "variants/pod_1x1_4x2y/synth.f"
+include_dirs = [
+  "src/basejump_stl/bsg_misc",
+  "src/basejump_stl/bsg_cache",
+  "src/basejump_stl/bsg_noc",
+  "src/basejump_stl/bsg_tag",
+  "src/bsg_manycore/v",
+  "src/bsg_manycore/v/vanilla_bean",
+  "src/bsg_manycore/imports/HardFloat/source",
+  "src/bsg_manycore/imports/HardFloat/source/RISCV",
+]
+# -Wno-index-oob: bsg_mesh_router_decoder_dor.sv reads from_p[RN] and from_p[RS] of a 7 bit vector in a ruche router;
+# slang reports the read of a bit out of range as an error, Verilog reads x and the branch is not taken.
+slang_flags = ["-Wno-index-oob"]
+# The memories of BaseJump STL that the array instantiates (icache and dmem, vcache data, tag and stat memories, FIFO
+# memories). Each wrapper instantiates its behavioural model (the _synth module); the memory generator of a process
+# replaces the wrapper (upstream: syn/README.md, syn/v), which this repository does not do.
+macros = [
+  { module = "bsg_mem_1rw_sync", model = "src/basejump_stl/bsg_mem/bsg_mem_1rw_sync_synth.sv" },
+  { module = "bsg_mem_1rw_sync_mask_write_byte", model = "src/basejump_stl/bsg_mem/bsg_mem_1rw_sync_mask_write_byte_synth.sv" },
+  { module = "bsg_mem_1rw_sync_mask_write_bit", model = "src/basejump_stl/bsg_mem/bsg_mem_1rw_sync_mask_write_bit_synth.sv" },
+  { module = "bsg_mem_1r1w", model = "src/basejump_stl/bsg_mem/bsg_mem_1r1w_synth.sv" },
+]
+parameters = { num_tiles_x_p = "4", num_tiles_y_p = "2", pod_x_cord_width_p = "5", pod_y_cord_width_p = "6", x_cord_width_p = "7", y_cord_width_p = "7", addr_width_p = "28", data_width_p = "32", ruche_factor_X_p = "3", barrier_ruche_factor_X_p = "3", num_subarray_x_p = "1", num_subarray_y_p = "1", dmem_size_p = "1024", icache_entries_p = "1024", icache_tag_width_p = "12", icache_block_size_in_words_p = "4", vcache_addr_width_p = "29", vcache_data_width_p = "32", vcache_ways_p = "4", vcache_sets_p = "64", vcache_block_size_in_words_p = "8", vcache_size_p = "2048", vcache_dma_data_width_p = "32", vcache_word_tracking_p = "1", ipoly_hashing_p = "0", wh_ruche_factor_p = "2", wh_cid_width_p = "2", wh_flit_width_p = "32", wh_cord_width_p = "7", wh_len_width_p = "4", num_pods_y_p = "1", num_pods_x_p = "1" }
+
+# No period and no I/O delays: upstream has no SDC for the array (syn/ has only the sv2v flow) and publishes no
+# frequency for an open PDK. The testbench clocks the core at 1 GHz (core_clk_period_p = 1000 ps), which is a
+# simulation setting, not a constraint. The array has the clock clk_i; resets come in as bsg_tag clients (pod_tags_i).
+[[variant.clock]]
+name = "clk"
+port = "clk_i"
+
+[variant.constraints]
+resets = []
+
+# Simulation: upstream's Verilator flow (machines/Makefile.verilator with BSG_PLATFORM=verilator): testbench
+# spmd_testbench with the C++ main of testbenches/common/v/test.cpp, built as set_verilator_machine_variables and
+# VERILATOR_FLAGS of that makefile do for the machine pod_1x1_4X2Y. The tag boot ROM of the machine is generated by
+# recipe/resolve.py as the makefile does.
+[variant.sim]
+simulator = "verilator"
+top = "spmd_testbench"
+files = "variants/pod_1x1_4x2y/sim.f"
+include_dirs = ["src/bsg_manycore/testbenches/common/v"]
+# --exe: the C++ main is test.cpp. -Wno-fatal as upstream. -std=c++17 instead of -std=c++14 (the generated code of
+# Verilator 5 needs C++17 or later, and the fmt of DRAMSim3 does not compile as C++20, the default of this Verilator);
+# -g of the makefile is left out, the debug information only costs build time. The C++ include paths are those of
+# VERILATOR_CFLAGS (DRAMSim3, bsg_test), -DBASEJUMP_STL_DIR is the directory of basejump_stl.
+verilator_flags = [
+  "--exe", "-Wno-fatal", "-O2", "--no-assert",
+  "-CFLAGS", "-std=c++17", "-CFLAGS", "-Wall", "-CFLAGS", "-O2", "-CFLAGS", "-fPIC",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/basejump_stl/imports/DRAMSim3/src",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/basejump_stl/imports/DRAMSim3/ext/headers",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/basejump_stl/imports/DRAMSim3/ext/fmt/include",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/basejump_stl/bsg_test",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/bsg_manycore/testbenches/common/v",
+  "-CFLAGS", "-DFMT_HEADER_ONLY=1",
+  "-CFLAGS", "-DBASEJUMP_STL_DIR=${DESIGN_DIR}/src/basejump_stl",
+]
+dut = "spmd_testbench.testbench.fi1.DUT"
+# machines/Makefile.verilator ... software/mk/Makefile.verilog: BSG_SIM_OPTS (+nbf_file, +num_finish,
+# +vanilla_trace_en, +coverage_en; +max_cycle per workload).
+args = ["+nbf_file={image}", "+num_finish=1", "+vanilla_trace_en=0", "+coverage_en=0"]
+# The monitor prints "RECEIVED BSG_FINISH PACKET from all pods, time=<ps>" when the program reports success (and
+# "BSG_TIMEOUT reached max_cycle" at +max_cycle; a failing program sends a fail packet). The core clock is 1000 ps
+# (core_clk_period_p of spmd_testbench.sv), so the cycle count is the time without its last three digits. It counts
+# from time 0 and includes reset, the tag boot and the load of the program by the testbench.
+cycles_pattern = 'RECEIVED BSG_FINISH PACKET from all pods, time=([0-9]+)000\b'
+# The BSG_MACHINE_* macros of machines/Makefile.verilator for the machine, and the defines that it adds for the memory
+# model of the board (den2048Mb, sg5, x16, FULL_MEM) and for the profiler (HOST_MODULE_PATH).
+[variant.sim.defines]
+BSG_MACHINE_PODS_X = "1"
+BSG_MACHINE_PODS_Y = "1"
+BSG_MACHINE_GLOBAL_X = "4"
+BSG_MACHINE_GLOBAL_Y = "2"
+BSG_MACHINE_X_CORD_WIDTH = "7"
+BSG_MACHINE_Y_CORD_WIDTH = "7"
+BSG_MACHINE_RUCHE_FACTOR_X = "3"
+BSG_MACHINE_BARRIER_RUCHE_FACTOR_X = "3"
+BSG_MACHINE_WH_RUCHE_FACTOR = "2"
+BSG_MACHINE_NUM_VCACHE_ROWS = "1"
+BSG_MACHINE_VCACHE_SET = "64"
+BSG_MACHINE_VCACHE_WAY = "4"
+BSG_MACHINE_VCACHE_BLOCK_SIZE_WORDS = "8"
+BSG_MACHINE_VCACHE_DMA_DATA_WIDTH = "32"
+BSG_MACHINE_NUM_VCACHES_PER_CHANNEL = "2"
+BSG_MACHINE_DRAM_SIZE_WORDS = "536870912"
+BSG_MACHINE_DRAM_BANK_SIZE_WORDS = "16777216"
+BSG_MACHINE_DRAM_INCLUDED = "1"
+BSG_MACHINE_MAX_EPA_WIDTH = "28"
+BSG_MACHINE_BRANCH_TRACE_EN = "0"
+BSG_MACHINE_HETERO_TYPE_VEC = "default:0"
+BSG_MACHINE_ORIGIN_X_CORD = "4"
+BSG_MACHINE_ORIGIN_Y_CORD = "2"
+BSG_MACHINE_HOST_X_CORD = "4"
+BSG_MACHINE_HOST_Y_CORD = "0"
+BSG_MACHINE_MEM_CFG = "e_vcache_test_mem"
+BSG_MACHINE_NETWORK_CFG = "e_network_half_ruche_x"
+BSG_MACHINE_DRAMSIM3_PKG = "bsg_dramsim3_hbm2_8gb_x128_pkg"
+BSG_MACHINE_SUBARRAY_X = "1"
+BSG_MACHINE_SUBARRAY_Y = "1"
+BSG_MACHINE_VCACHE_WORD_TRACKING = "1"
+BSG_MACHINE_IPOLY_HASHING = "0"
+HOST_MODULE_PATH = "spmd_testbench"
+den2048Mb = ""
+sg5 = ""
+x16 = ""
+FULL_MEM = ""
+# The switches that bsg_nonsynth_manycore_testbench.sv offers for Verilator ("the only way to prevent Verilator from
+# running the profilers and slowing down simulation"): the profilers of the testbench are bound into every tile and
+# run even when their parameter is 0. The makefile does not set them; they only remove the CSV traces of the
+# profilers.
+VERILATOR_WORKAROUND_DISABLE_VCORE_PROFILING = ""
+VERILATOR_WORKAROUND_DISABLE_REMOTE_OP_PROFILING = ""
+VERILATOR_WORKAROUND_DISABLE_VCACHE_PROFILING = ""
+VERILATOR_WORKAROUND_DISABLE_ROUTER_PROFILER = ""
+VERILATOR_WORKAROUND_DISABLE_VCORE_COVERAGE = ""
+VERILATOR_WORKAROUND_DISABLE_VCORE_TRACE = ""
+VERILATOR_WORKAROUND_DISABLE_PC_HISTOGRAM = ""
+
+# x
+
+# x
+
+# x
+
+# software/spmd/hello: one tile of the pod prints, reads DRAM and finishes. 10558 cycles, 2.5 s of wall time on the
+# NAS (load average 40 to 80 from other jobs). max_cycles and +max_cycle: about ten times the cycles that `rtl-bench
+# sim` printed (the time of the BSG_FINISH line of the monitor, see cycles_pattern).
+[[variant.sim.workload]]
+id = "hello"
+image = "sim/pod_1x1_4x2y/hello.nbf"
+sources = ["src/bsg_manycore/software/spmd/hello/main.c", "src/bsg_manycore/software/spmd/hello/Makefile"]
+pass = { kind = "stdout", contains = "RECEIVED BSG_FINISH PACKET from all pods" }
+max_cycles = 100000
+args = ["+max_cycle=100000"]
+
+# software/spmd/bsg_mutex with the tile group on every tile: each tile takes a mutex of tile (0,0) and increments a
+# counter, tile (0,0) finishes at the count of all tiles. 2958 cycles, 2.6 s of wall time on the NAS (load average 40
+# to 80 from other jobs). max_cycles and +max_cycle: about ten times the cycles that `rtl-bench sim` printed (the time
+# of the BSG_FINISH line of the monitor, see cycles_pattern).
+[[variant.sim.workload]]
+id = "bsg_mutex"
+image = "sim/pod_1x1_4x2y/bsg_mutex.nbf"
+sources = ["src/bsg_manycore/software/spmd/bsg_mutex/main.c", "src/bsg_manycore/software/spmd/bsg_mutex/Makefile"]
+pass = { kind = "stdout", contains = "RECEIVED BSG_FINISH PACKET from all pods" }
+max_cycles = 30000
+args = ["+max_cycle=30000"]
+
+# software/spmd/bsg_barrier_amoadd_test with the tile group on every tile: seven rounds of an AMO add, the AMO barrier
+# and a check of a neighbour tile (a wrong value is a fail packet). 4695 cycles, 2.2 s of wall time on the NAS (load
+# average 40 to 80 from other jobs). max_cycles and +max_cycle: about ten times the cycles that `rtl-bench sim`
+# printed (the time of the BSG_FINISH line of the monitor, see cycles_pattern).
+[[variant.sim.workload]]
+id = "bsg_barrier_amoadd_test"
+image = "sim/pod_1x1_4x2y/bsg_barrier_amoadd_test.nbf"
+sources = ["src/bsg_manycore/software/spmd/bsg_barrier_amoadd_test/main.c", "src/bsg_manycore/software/spmd/bsg_barrier_amoadd_test/Makefile"]
+pass = { kind = "stdout", contains = "RECEIVED BSG_FINISH PACKET from all pods" }
+max_cycles = 50000
+args = ["+max_cycle=50000"]
+
+# software/spmd/vcache_atomic_inc with the tile group on every tile: every tile takes a lock in DRAM (vcache) with
+# amoswap, increments a counter and prints it; the last tile finishes. 2813 cycles, 2.3 s of wall time on the NAS
+# (load average 40 to 80 from other jobs). max_cycles and +max_cycle: about ten times the cycles that `rtl-bench sim`
+# printed (the time of the BSG_FINISH line of the monitor, see cycles_pattern).
+[[variant.sim.workload]]
+id = "vcache_atomic_inc"
+image = "sim/pod_1x1_4x2y/vcache_atomic_inc.nbf"
+sources = ["src/bsg_manycore/software/spmd/vcache_atomic_inc/main.c", "src/bsg_manycore/software/spmd/vcache_atomic_inc/Makefile"]
+pass = { kind = "stdout", contains = "RECEIVED BSG_FINISH PACKET from all pods" }
+max_cycles = 30000
+args = ["+max_cycle=30000"]
+
+[[variant]]
+id = "pod_1x1"
+description = "Machine pod_1x1: one pod of 16 x 8 compute tiles (128 vanilla cores), 16 vcache banks on each of the north and south edges, half-ruche network with ruche factor 3, IPOLY DRAM hashing."
+
+# Synthesis top: bsg_manycore_pod_ruche_array, the DUT that the testbench of upstream instantiates for the network
+# e_network_half_ruche_x (testbenches/common/v/bsg_nonsynth_manycore_testbench.sv, instance DUT). The parameters are
+# those that the testbench computes from machines/pod_1x1/Makefile.machine.include (spmd_testbench.sv, with the mem
+# and network configurations of the machine): the dimensions, coordinate widths, ruche factors and vcache geometry
+# come from the machine file, the rest are the defaults of spmd_testbench.sv (dmem 1024 words, icache 1024 entries
+# with a 12 bit tag and 4 word blocks, 32 bit data); pod_*_cord_width_p = *_cord_width_p - clog2(tiles), as there;
+# wh_cid_width_p = clog2(2 * wh_ruche_factor_p), wh_len_width_p = clog2(2 + block bits / dma width) and vcache_size_p
+# = sets * ways * block words, as there. See recipe/README.md.
+[variant.synth]
+top = "bsg_manycore_pod_ruche_array"
+language = "sv-2017"
+files = "variants/pod_1x1/synth.f"
+include_dirs = [
+  "src/basejump_stl/bsg_misc",
+  "src/basejump_stl/bsg_cache",
+  "src/basejump_stl/bsg_noc",
+  "src/basejump_stl/bsg_tag",
+  "src/bsg_manycore/v",
+  "src/bsg_manycore/v/vanilla_bean",
+  "src/bsg_manycore/imports/HardFloat/source",
+  "src/bsg_manycore/imports/HardFloat/source/RISCV",
+]
+# -Wno-index-oob: bsg_mesh_router_decoder_dor.sv reads from_p[RN] and from_p[RS] of a 7 bit vector in a ruche router;
+# slang reports the read of a bit out of range as an error, Verilog reads x and the branch is not taken.
+slang_flags = ["-Wno-index-oob"]
+# The memories of BaseJump STL that the array instantiates (icache and dmem, vcache data, tag and stat memories, FIFO
+# memories). Each wrapper instantiates its behavioural model (the _synth module); the memory generator of a process
+# replaces the wrapper (upstream: syn/README.md, syn/v), which this repository does not do.
+macros = [
+  { module = "bsg_mem_1rw_sync", model = "src/basejump_stl/bsg_mem/bsg_mem_1rw_sync_synth.sv" },
+  { module = "bsg_mem_1rw_sync_mask_write_byte", model = "src/basejump_stl/bsg_mem/bsg_mem_1rw_sync_mask_write_byte_synth.sv" },
+  { module = "bsg_mem_1rw_sync_mask_write_bit", model = "src/basejump_stl/bsg_mem/bsg_mem_1rw_sync_mask_write_bit_synth.sv" },
+  { module = "bsg_mem_1r1w", model = "src/basejump_stl/bsg_mem/bsg_mem_1r1w_synth.sv" },
+]
+parameters = { num_tiles_x_p = "16", num_tiles_y_p = "8", pod_x_cord_width_p = "3", pod_y_cord_width_p = "4", x_cord_width_p = "7", y_cord_width_p = "7", addr_width_p = "28", data_width_p = "32", ruche_factor_X_p = "3", barrier_ruche_factor_X_p = "3", num_subarray_x_p = "1", num_subarray_y_p = "1", dmem_size_p = "1024", icache_entries_p = "1024", icache_tag_width_p = "12", icache_block_size_in_words_p = "4", vcache_addr_width_p = "29", vcache_data_width_p = "32", vcache_ways_p = "4", vcache_sets_p = "64", vcache_block_size_in_words_p = "8", vcache_size_p = "2048", vcache_dma_data_width_p = "32", vcache_word_tracking_p = "1", ipoly_hashing_p = "1", wh_ruche_factor_p = "2", wh_cid_width_p = "2", wh_flit_width_p = "32", wh_cord_width_p = "7", wh_len_width_p = "4", num_pods_y_p = "1", num_pods_x_p = "1" }
+
+# No period and no I/O delays: upstream has no SDC for the array (syn/ has only the sv2v flow) and publishes no
+# frequency for an open PDK. The testbench clocks the core at 1 GHz (core_clk_period_p = 1000 ps), which is a
+# simulation setting, not a constraint. The array has the clock clk_i; resets come in as bsg_tag clients (pod_tags_i).
+[[variant.clock]]
+name = "clk"
+port = "clk_i"
+
+[variant.constraints]
+resets = []
+
+# Simulation: upstream's Verilator flow (machines/Makefile.verilator with BSG_PLATFORM=verilator): testbench
+# spmd_testbench with the C++ main of testbenches/common/v/test.cpp, built as set_verilator_machine_variables and
+# VERILATOR_FLAGS of that makefile do for the machine pod_1x1. The tag boot ROM of the machine is generated by
+# recipe/resolve.py as the makefile does.
+[variant.sim]
+simulator = "verilator"
+top = "spmd_testbench"
+files = "variants/pod_1x1/sim.f"
+include_dirs = ["src/bsg_manycore/testbenches/common/v"]
+# --exe: the C++ main is test.cpp. -Wno-fatal as upstream. -std=c++17 instead of -std=c++14 (the generated code of
+# Verilator 5 needs C++17 or later, and the fmt of DRAMSim3 does not compile as C++20, the default of this Verilator);
+# -g of the makefile is left out, the debug information only costs build time. The C++ include paths are those of
+# VERILATOR_CFLAGS (DRAMSim3, bsg_test), -DBASEJUMP_STL_DIR is the directory of basejump_stl.
+verilator_flags = [
+  "--exe", "-Wno-fatal", "-O2", "--no-assert",
+  "-CFLAGS", "-std=c++17", "-CFLAGS", "-Wall", "-CFLAGS", "-O2", "-CFLAGS", "-fPIC",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/basejump_stl/imports/DRAMSim3/src",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/basejump_stl/imports/DRAMSim3/ext/headers",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/basejump_stl/imports/DRAMSim3/ext/fmt/include",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/basejump_stl/bsg_test",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/bsg_manycore/testbenches/common/v",
+  "-CFLAGS", "-DFMT_HEADER_ONLY=1",
+  "-CFLAGS", "-DBASEJUMP_STL_DIR=${DESIGN_DIR}/src/basejump_stl",
+]
+dut = "spmd_testbench.testbench.fi1.DUT"
+# machines/Makefile.verilator ... software/mk/Makefile.verilog: BSG_SIM_OPTS (+nbf_file, +num_finish,
+# +vanilla_trace_en, +coverage_en; +max_cycle per workload).
+args = ["+nbf_file={image}", "+num_finish=1", "+vanilla_trace_en=0", "+coverage_en=0"]
+# The monitor prints "RECEIVED BSG_FINISH PACKET from all pods, time=<ps>" when the program reports success (and
+# "BSG_TIMEOUT reached max_cycle" at +max_cycle; a failing program sends a fail packet). The core clock is 1000 ps
+# (core_clk_period_p of spmd_testbench.sv), so the cycle count is the time without its last three digits. It counts
+# from time 0 and includes reset, the tag boot and the load of the program by the testbench.
+cycles_pattern = 'RECEIVED BSG_FINISH PACKET from all pods, time=([0-9]+)000\b'
+# The BSG_MACHINE_* macros of machines/Makefile.verilator for the machine, and the defines that it adds for the memory
+# model of the board (den2048Mb, sg5, x16, FULL_MEM) and for the profiler (HOST_MODULE_PATH).
+[variant.sim.defines]
+BSG_MACHINE_PODS_X = "1"
+BSG_MACHINE_PODS_Y = "1"
+BSG_MACHINE_GLOBAL_X = "16"
+BSG_MACHINE_GLOBAL_Y = "8"
+BSG_MACHINE_X_CORD_WIDTH = "7"
+BSG_MACHINE_Y_CORD_WIDTH = "7"
+BSG_MACHINE_RUCHE_FACTOR_X = "3"
+BSG_MACHINE_BARRIER_RUCHE_FACTOR_X = "3"
+BSG_MACHINE_WH_RUCHE_FACTOR = "2"
+BSG_MACHINE_NUM_VCACHE_ROWS = "1"
+BSG_MACHINE_VCACHE_SET = "64"
+BSG_MACHINE_VCACHE_WAY = "4"
+BSG_MACHINE_VCACHE_BLOCK_SIZE_WORDS = "8"
+BSG_MACHINE_VCACHE_DMA_DATA_WIDTH = "32"
+BSG_MACHINE_NUM_VCACHES_PER_CHANNEL = "16"
+BSG_MACHINE_DRAM_SIZE_WORDS = "536870912"
+BSG_MACHINE_DRAM_BANK_SIZE_WORDS = "16777216"
+BSG_MACHINE_DRAM_INCLUDED = "1"
+BSG_MACHINE_MAX_EPA_WIDTH = "28"
+BSG_MACHINE_BRANCH_TRACE_EN = "0"
+BSG_MACHINE_HETERO_TYPE_VEC = "default:0"
+BSG_MACHINE_ORIGIN_X_CORD = "16"
+BSG_MACHINE_ORIGIN_Y_CORD = "8"
+BSG_MACHINE_HOST_X_CORD = "16"
+BSG_MACHINE_HOST_Y_CORD = "0"
+BSG_MACHINE_MEM_CFG = "e_vcache_test_mem"
+BSG_MACHINE_NETWORK_CFG = "e_network_half_ruche_x"
+BSG_MACHINE_DRAMSIM3_PKG = "bsg_dramsim3_hbm2_8gb_x128_pkg"
+BSG_MACHINE_SUBARRAY_X = "1"
+BSG_MACHINE_SUBARRAY_Y = "1"
+BSG_MACHINE_VCACHE_WORD_TRACKING = "1"
+BSG_MACHINE_IPOLY_HASHING = "1"
+HOST_MODULE_PATH = "spmd_testbench"
+den2048Mb = ""
+sg5 = ""
+x16 = ""
+FULL_MEM = ""
+# The switches that bsg_nonsynth_manycore_testbench.sv offers for Verilator ("the only way to prevent Verilator from
+# running the profilers and slowing down simulation"): the profilers of the testbench are bound into every tile and
+# run even when their parameter is 0. The makefile does not set them; they only remove the CSV traces of the
+# profilers.
+VERILATOR_WORKAROUND_DISABLE_VCORE_PROFILING = ""
+VERILATOR_WORKAROUND_DISABLE_REMOTE_OP_PROFILING = ""
+VERILATOR_WORKAROUND_DISABLE_VCACHE_PROFILING = ""
+VERILATOR_WORKAROUND_DISABLE_ROUTER_PROFILER = ""
+VERILATOR_WORKAROUND_DISABLE_VCORE_COVERAGE = ""
+VERILATOR_WORKAROUND_DISABLE_VCORE_TRACE = ""
+VERILATOR_WORKAROUND_DISABLE_PC_HISTOGRAM = ""
+
+# x
+
+# x
+
+# x
+
+# software/spmd/hello: one tile of the pod prints, reads DRAM and finishes. 13780 cycles, 41 s of wall time on the NAS
+# (load average 40 to 80 from other jobs). max_cycles and +max_cycle: about ten times the cycles that `rtl-bench sim`
+# printed (the time of the BSG_FINISH line of the monitor, see cycles_pattern).
+[[variant.sim.workload]]
+id = "hello"
+image = "sim/pod_1x1/hello.nbf"
+sources = ["src/bsg_manycore/software/spmd/hello/main.c", "src/bsg_manycore/software/spmd/hello/Makefile"]
+pass = { kind = "stdout", contains = "RECEIVED BSG_FINISH PACKET from all pods" }
+max_cycles = 140000
+args = ["+max_cycle=140000"]
+
+# software/spmd/bsg_mutex with the tile group on every tile: each tile takes a mutex of tile (0,0) and increments a
+# counter, tile (0,0) finishes at the count of all tiles. 57761 cycles, 63 s of wall time on the NAS (load average 40
+# to 80 from other jobs). max_cycles and +max_cycle: about ten times the cycles that `rtl-bench sim` printed (the time
+# of the BSG_FINISH line of the monitor, see cycles_pattern).
+[[variant.sim.workload]]
+id = "bsg_mutex"
+image = "sim/pod_1x1/bsg_mutex.nbf"
+sources = ["src/bsg_manycore/software/spmd/bsg_mutex/main.c", "src/bsg_manycore/software/spmd/bsg_mutex/Makefile"]
+pass = { kind = "stdout", contains = "RECEIVED BSG_FINISH PACKET from all pods" }
+max_cycles = 580000
+args = ["+max_cycle=580000"]
+
+# software/spmd/bsg_barrier_amoadd_test with the tile group on every tile: seven rounds of an AMO add, the AMO barrier
+# and a check of a neighbour tile (a wrong value is a fail packet). 53751 cycles, 134 s of wall time on the NAS (load
+# average 40 to 80 from other jobs). max_cycles and +max_cycle: about ten times the cycles that `rtl-bench sim`
+# printed (the time of the BSG_FINISH line of the monitor, see cycles_pattern).
+[[variant.sim.workload]]
+id = "bsg_barrier_amoadd_test"
+image = "sim/pod_1x1/bsg_barrier_amoadd_test.nbf"
+sources = ["src/bsg_manycore/software/spmd/bsg_barrier_amoadd_test/main.c", "src/bsg_manycore/software/spmd/bsg_barrier_amoadd_test/Makefile"]
+pass = { kind = "stdout", contains = "RECEIVED BSG_FINISH PACKET from all pods" }
+max_cycles = 540000
+args = ["+max_cycle=540000"]
+
+# software/spmd/vcache_atomic_inc with the tile group on every tile: every tile takes a lock in DRAM (vcache) with
+# amoswap, increments a counter and prints it; the last tile finishes. 69047 cycles, 158 s of wall time on the NAS
+# (load average 40 to 80 from other jobs). max_cycles and +max_cycle: about ten times the cycles that `rtl-bench sim`
+# printed (the time of the BSG_FINISH line of the monitor, see cycles_pattern).
+[[variant.sim.workload]]
+id = "vcache_atomic_inc"
+image = "sim/pod_1x1/vcache_atomic_inc.nbf"
+sources = ["src/bsg_manycore/software/spmd/vcache_atomic_inc/main.c", "src/bsg_manycore/software/spmd/vcache_atomic_inc/Makefile"]
+pass = { kind = "stdout", contains = "RECEIVED BSG_FINISH PACKET from all pods" }
+max_cycles = 700000
+args = ["+max_cycle=700000"]
