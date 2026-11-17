@@ -46,7 +46,8 @@ jobs:
           # The workloads are those that ran in under 60 s on the NAS (16 threads); a runner with 2 cores
           # needs longer. Left out, with their time on the NAS: opentitan.earlgrey otbn_smoketest (60 s),
           # boom.smallv3 dhrystone (128 s), caliptra.core smoke_test_mldsa (218 s) and smoke_test_ecc_sign
-          # (496 s), gemmini.rocket16x16 tiled_matmul_ws (673 s) and conv (1170 s).
+          # (496 s), gemmini.rocket16x16 tiled_matmul_ws (673 s) and conv (1170 s). Every workload of
+          # naxriscv.rv64 is in: the longest, coremark, took 10 s on the NAS.
           - variant: wally.rv64gc
             workloads: ieu fpu coremark
           - variant: blackparrot.unicore
@@ -69,6 +70,11 @@ jobs:
           # jobs. This has not been measured on a runner.
           - variant: gemmini.rocket16x16
             workloads: rv64ui-p-simple template
+          # The model of NaxRiscv (Verilator 4.228 and the Spike libraries from nix, which a runner builds first) took 13 s of
+          # wall time, 78 s of CPU and 0.45 GB at most (the Verilator process) on the NAS with 16 jobs. This has not
+          # been measured on a runner.
+          - variant: naxriscv.rv64
+            workloads: rv64ui-p-add rv64ui-p-sd rv64um-p-mul rv64ua-p-amoadd_d dhrystone coremark
     steps:
       - name: Free disk space
         run: |
