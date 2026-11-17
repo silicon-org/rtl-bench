@@ -22,6 +22,53 @@
             hash = "sha256-8WffLY3IhsCkiYUMfe2aZy1zzOqEBHX4MTMai2dZFI0=";
           };
         });
+        # Verilator 4.228 (LGPL-3.0-only OR Artistic-2.0), the version that the NaxRiscv testbench pins
+        # (Makefile: VERILATOR_VERSION_NAX); its main.cpp uses the Verilator 4 model layout (top->NaxRiscv).
+        verilator4 = pkgs.verilator.overrideAttrs (_: {
+          version = "4.228";
+          src = pkgs.fetchFromGitHub {
+            owner = "verilator";
+            repo = "verilator";
+            rev = "v4.228";
+            hash = "sha256-ToYad8cvBF3Mio5fuT4Ce4zXbWxFxd6smqB1TxvlHao=";
+          };
+          patches = [ ];
+          postPatch = "";
+          doCheck = false;
+        });
+        # The Spike of the NaxRiscv testbench (it links libriscv, libfesvr, libdisasm, libsoftfloat, libfdt and the
+        # spike object): the SpinalHDL fork, the commit of ext/riscv-isa-sim of NaxRiscv, built as ci/install-libsdl-elfio-spikespinalhdl.sh
+        # does. The whole source and build tree is the output: the testbench includes its headers.
+        naxSpike = pkgs.stdenv.mkDerivation {
+          pname = "riscv-isa-sim-spinalhdl";
+          version = "5b37ab6";
+          src = pkgs.fetchFromGitHub {
+            owner = "SpinalHDL"; repo = "riscv-isa-sim";
+            rev = "5b37ab699f6176ea7f2d2b3187f75625eca7e511";
+            hash = "sha256-30ufkwqmZwlO2Wij77ZPDrK1VBp3UraiGQqtKPX/mss=";
+          };
+          nativeBuildInputs = [ pkgs.dtc ];
+          dontConfigure = true;
+          dontFixup = true;
+          buildPhase = ''
+            mkdir build && cd build
+            ../configure --prefix=$out --without-boost --without-boost-asio --without-boost-regex
+            make -j$NIX_BUILD_CORES
+            g++ --shared -L. -Wl,--export-dynamic -o package.so spike.o libspike_main.a libriscv.a \
+              libdisasm.a libsoftfloat.a libfesvr.a libfdt.a -lpthread -ldl
+            cd ..
+          '';
+          installPhase = ''
+            mkdir -p $out
+            cp -r . $out/
+          '';
+        };
+        # ELFIO at the commit that the NaxRiscv Makefile pins (ELFIO_VERSION: the last one without C++17).
+        naxElfio = pkgs.fetchFromGitHub {
+          owner = "serge1"; repo = "ELFIO";
+          rev = "d251da09a07dff40af0b63b8f6c8ae71d2d1938d";
+          hash = "sha256-0uqWs+W6ePBgol3IKLr5GMx7b6Fm3SsV3KuRMTZCjaA=";
+        };
         rv = pkgs.pkgsCross.riscv64-embedded.buildPackages;
         # Upstream scripts and makefiles call the tools riscv64-unknown-elf-*; the
         # bare-metal toolchain from nixpkgs names them riscv64-none-elf-*.
@@ -140,8 +187,8 @@
       in
       {
         devShells.default = pkgs.mkShell {
-          # libelf, which the OpenTitan simulation links
-          buildInputs = [ pkgs.elfutils ];
+          # libelf, which the OpenTitan simulation links; zlib for the FST writer of Verilator 4 (NaxRiscv)
+          buildInputs = [ pkgs.elfutils pkgs.zlib ];
           packages = with pkgs; [
             verilator
             slang
@@ -161,8 +208,9 @@
             rv32.binutils
             riscv32Aliases
             otFhs
-            # Chipyard's generation flow (JDK 17: the Scala 2.12 of sbt cannot read newer class files)
+            # Chipyard's and NaxRiscv's generation flows (JDK 17: the Scala 2.12 of sbt cannot read newer class files)
             jdk17
+            sbt
             dtc
             perl
             gawk
@@ -180,6 +228,11 @@
           VX_RAMULATOR = "${vxRamulator}";
           # libfesvr and libriscv (Spike) for the Chipyard simulator
           CY_SPIKE = "${pkgs.spike}";
+          NAX_VERILATOR4 = "${verilator4}";
+          NAX_SPIKE = "${naxSpike}";
+          NAX_ELFIO = "${naxElfio}";
+          NAX_SDL2 = "${pkgs.SDL2.dev}";
+          NAX_SDL2_LIB = "${pkgs.SDL2}/lib";
         };
       });
 }
