@@ -168,6 +168,40 @@
             export CFLAGS_FOR_TARGET="-g -O2 -march=rv32imc_zicsr_zifencei -mabi=ilp32"
           '';
         });
+        # The compiler of BSG Manycore: the vanilla core is RV32IMAF with the ilp32f ABI (software/mk/Makefile.builddefs:
+        # ARCH_OP, ABI), which the 32 bit toolchain of nixpkgs (rv32imafdc, ilp32d, no multilib) cannot link. GCC, binutils
+        # and newlib are built again with that default. zicsr and zifencei because binutils 2.46 does not take the CSR
+        # instructions of crt.S in plain rv32imaf.
+        rv32f = (import nixpkgs {
+          inherit system;
+          crossSystem = {
+            config = "riscv32-none-elf";
+            libc = "newlib";
+            gcc = { arch = "rv32imaf_zicsr_zifencei"; abi = "ilp32f"; };
+          };
+        }).buildPackages;
+        # The Makefiles of BSG Manycore call riscv32-unknown-elf-dramfs-* from RISCV_BIN_DIR. They pass -mtune=bsg_vanilla_2020,
+        # a scheduling model of the patched GCC 9.2 that upstream builds; stock GCC does not know it, so the wrappers drop
+        # that one option and nothing else.
+        bsgCc = name: real: pkgs.writeShellScriptBin "riscv32-unknown-elf-dramfs-${name}" ''
+          args=()
+          for a in "$@"; do [ "$a" = -mtune=bsg_vanilla_2020 ] || args+=("$a"); done
+          exec ${real} "''${args[@]}"
+        '';
+        bsgRiscv = pkgs.symlinkJoin {
+          name = "bsg-riscv32-ilp32f";
+          paths = [
+            (bsgCc "gcc" "${rv32f.gcc}/bin/riscv32-none-elf-gcc")
+            (bsgCc "g++" "${rv32f.gcc}/bin/riscv32-none-elf-g++")
+            (pkgs.runCommand "bsg-riscv32-binutils" { } ''
+              mkdir -p $out/bin
+              for tool in objcopy objdump ar; do
+                ln -s ${rv32f.binutils}/bin/riscv32-none-elf-$tool $out/bin/riscv32-unknown-elf-dramfs-$tool
+              done
+              ln -s ${rv32f.binutils}/bin/riscv32-none-elf-objdump $out/bin/riscv32-unknown-elf-objdump
+            '')
+          ];
+        };
         # OpenTitan builds its software with Bazel, whose hermetic toolchains are dynamically linked
         # programs and whose actions use /bin/bash and srec_cat: a FHS environment for them.
         otFhs = pkgs.buildFHSEnv {
@@ -233,6 +267,14 @@
           NAX_ELFIO = "${naxElfio}";
           NAX_SDL2 = "${pkgs.SDL2.dev}";
           NAX_SDL2_LIB = "${pkgs.SDL2}/lib";
+        };
+        # `nix develop .#bsg`: the shell that builds the workloads of BSG Manycore. Its compiler is built from source (GCC and
+        # newlib, about an hour), so the default shell does not have it. The Makefiles of BSG Manycore compute with bc.
+        devShells.bsg = pkgs.mkShell {
+          inputsFrom = [ self.devShells.${system}.default ];
+          packages = [ pkgs.bc ];
+          # RISCV_BIN_DIR of its makefiles
+          BSG_RISCV_BIN = "${bsgRiscv}/bin";
         };
       });
 }
