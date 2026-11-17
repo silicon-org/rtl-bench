@@ -729,6 +729,7 @@ pub fn licence_matches(expr: &str, text: &str) -> bool {
         "SHL-2.1" => has("Solderpad Hardware License") && has("version 2.1"),
         "ISC" => has("Permission to use, copy, modify, and/or distribute this software"),
         "CERN-OHL-S-2.0" => has("CERN Open Hardware Licence Version 2 - Strongly Reciprocal"),
+        "MulanPSL-2.0" => has("Mulan Permissive Software License") && has("Mulan PSL v2"),
         _ => false,
     }
 }
@@ -926,6 +927,17 @@ timeout_s = 60
             unstated("CERN-OHL-S-2.0 AND MIT", &[text.to_string()]),
             Some("MIT".into())
         );
+    }
+
+    #[test]
+    fn mulan_psl_text_is_recognised() {
+        let text = "Mulan Permissive Software License, Version 2 (Mulan PSL v2)\n\nJanuary 2020\n";
+        assert!(licence_matches("MulanPSL-2.0", text));
+        assert!(!licence_matches(
+            "MulanPSL-2.0",
+            "Mulan Permissive Software License, Version 1"
+        ));
+        assert!(!licence_matches("MIT", text));
     }
 
     #[test]
