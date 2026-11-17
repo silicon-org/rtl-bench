@@ -202,6 +202,46 @@
             '')
           ];
         };
+        # The Python of the cocotb tests of Taxi. Versions are those of the tox.ini of Taxi: cocotb 2.0.1, cocotb-bus 0.3.0,
+        # cocotb-test 0.2.6, cocotbext-axi and cocotbext-eth 0.1.28, cocotbext-i2c 0.1.2, cocotbext-uart 0.1.4, scapy 2.6.1.
+        # Python 3.13: the newest that cocotb 2.0.1 ships wheels for.
+        cocotbPy =
+          let
+            py = pkgs.python313.pkgs;
+            ext = { pname, version, hash, deps ? [ ] }: py.buildPythonPackage {
+              inherit pname version;
+              pyproject = true;
+              src = pkgs.fetchPypi { inherit pname version hash; };
+              build-system = [ py.setuptools py.setuptools-scm ];
+              dependencies = deps;
+              doCheck = false;
+            };
+            cocotb = py.cocotb.overridePythonAttrs (_: {
+              version = "2.0.1";
+              src = pkgs.fetchPypi {
+                pname = "cocotb"; version = "2.0.1";
+                hash = "sha256-aYh3SEEv9D6Y+Fea1sDaH2/xmpTQw7TW2kctjoZ4ToI=";
+              };
+              patches = [ ];
+              doCheck = false;
+            });
+            scapy = py.scapy.overridePythonAttrs (_: {
+              version = "2.6.1";
+              src = pkgs.fetchPypi {
+                pname = "scapy"; version = "2.6.1";
+                hash = "sha256-dgDX4jg8hT5cOm4F034XZDvuvys+ENeRTf/MO8PG5sU=";
+              };
+              patches = [ ];
+              doCheck = false;
+            });
+            cocotbBus = ext { pname = "cocotb_bus"; version = "0.3.0"; hash = "sha256-l2KyknP/Bi9SFg5XJ048sQbRTn53ZRXeE3LB1zVGsAU="; deps = [ cocotb scapy ]; };
+            cocotbTest = ext { pname = "cocotb_test"; version = "0.2.6"; hash = "sha256-pGYZSMoUXu5rzK+DIXS177n200IGdxV8BK3nK7IWBpI="; deps = [ cocotb py.pytest py.find-libpython ]; };
+            axi = ext { pname = "cocotbext_axi"; version = "0.1.28"; hash = "sha256-XQYhhbm7VHaDmh2BaCHEUzskX1b3sXGz85Ew4miRrjc="; deps = [ cocotb cocotbBus ]; };
+            eth = ext { pname = "cocotbext_eth"; version = "0.1.28"; hash = "sha256-vBmx/vG0uSBfgoIrpFmRUZAAKS57iaZwFvWWwCLhBpU="; deps = [ cocotb cocotbBus axi ]; };
+            i2c = ext { pname = "cocotbext_i2c"; version = "0.1.2"; hash = "sha256-GIxv+cyZmFjutQVgtBosevAEDzNKvvsJcfjEC/iBiGc="; deps = [ cocotb ]; };
+            uart = ext { pname = "cocotbext_uart"; version = "0.1.4"; hash = "sha256-V0ZDyCBnvl4d1uLoMPRriAPAf8Hye391vyUGb9bQZ5g="; deps = [ cocotb ]; };
+          in
+          pkgs.python313.withPackages (_: [ cocotb cocotbBus cocotbTest axi eth i2c uart scapy py.pytest ]);
         # OpenTitan builds its software with Bazel, whose hermetic toolchains are dynamically linked
         # programs and whose actions use /bin/bash and srec_cat: a FHS environment for them.
         otFhs = pkgs.buildFHSEnv {
@@ -266,6 +306,8 @@
           # libfesvr and libriscv (Spike) for the Chipyard simulator
           CY_SPIKE = "${pkgs.spike}";
           NAX_VERILATOR4 = "${verilator4}";
+          # cocotb-config and the Python of the cocotb tests (Taxi)
+          COCOTB_ENV = "${cocotbPy}";
           NAX_SPIKE = "${naxSpike}";
           NAX_ELFIO = "${naxElfio}";
           NAX_SDL2 = "${pkgs.SDL2.dev}";
