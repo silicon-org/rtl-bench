@@ -77,6 +77,14 @@ pub fn expand_env(s: &str, design_dir: &Path) -> Result<String, String> {
     Ok(out)
 }
 
+/// The Verilator program of a variant: its `sim.verilator` with the environment expanded, else `verilator`.
+pub fn verilator_program(v: &Variant, design_dir: &Path) -> Result<String, String> {
+    match &v.sim.verilator {
+        Some(p) => expand_env(p, design_dir),
+        None => Ok("verilator".to_string()),
+    }
+}
+
 /// Build the simulation view with Verilator. Returns the path of the executable.
 pub fn build(root: &Path, l: &Loaded, v: &Variant, full_id: &str) -> Result<PathBuf, String> {
     let files = sim_files(&l.dir, v)?;
@@ -93,7 +101,7 @@ pub fn build(root: &Path, l: &Loaded, v: &Variant, full_id: &str) -> Result<Path
     fs::create_dir_all(&mdir).map_err(|e| format!("{}: {e}", mdir.display()))?;
     // A design with its own C++ main (--exe in the flags) is built with --cc --build.
     let own_main = v.sim.verilator_flags.iter().any(|f| f == "--exe");
-    let mut cmd = Command::new("verilator");
+    let mut cmd = Command::new(verilator_program(v, &l.dir)?);
     cmd.current_dir(&l.dir)
         .args(if own_main {
             ["--cc", "--build"]
@@ -391,6 +399,33 @@ mod tests {
         assert!(expand_env("${open", Path::new("/d"))
             .unwrap_err()
             .contains("without"));
+    }
+
+    fn variant_with_sim(extra: &str) -> Variant {
+        let text = format!(
+            "id = \"v\"\ndescription = \"d\"\n\
+             [synth]\ntop = \"t\"\nlanguage = \"verilog-2005\"\nfiles = \"s.f\"\n\
+             [constraints]\n\
+             [sim]\nsimulator = \"verilator\"\ntop = \"t\"\nfiles = \"m.f\"\ndut = \"t\"\n{extra}\n"
+        );
+        toml::from_str(&text).unwrap()
+    }
+
+    #[test]
+    fn verilator_program_defaults_and_expands() {
+        let d = Path::new("/d");
+        let plain = variant_with_sim("");
+        assert_eq!(verilator_program(&plain, d), Ok("verilator".to_string()));
+        std::env::set_var("RTL_BENCH_TEST_VERILATOR", "/opt/v4");
+        let own = variant_with_sim("verilator = \"${RTL_BENCH_TEST_VERILATOR}/bin/verilator\"");
+        assert_eq!(
+            verilator_program(&own, d),
+            Ok("/opt/v4/bin/verilator".to_string())
+        );
+        let unset = variant_with_sim("verilator = \"${RTL_BENCH_VERILATOR_NOT_SET}/verilator\"");
+        assert!(verilator_program(&unset, d)
+            .unwrap_err()
+            .contains("RTL_BENCH_VERILATOR_NOT_SET"));
     }
 
     #[test]

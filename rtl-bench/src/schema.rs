@@ -173,6 +173,8 @@ pub struct Sim {
     pub defines: BTreeMap<String, String>,
     #[serde(default)]
     pub parameters: BTreeMap<String, String>,
+    /// The Verilator program of this variant (`${NAME}` is expanded); without it, `verilator` of the PATH.
+    pub verilator: Option<String>,
     /// Extra Verilator options for this variant.
     #[serde(default)]
     pub verilator_flags: Vec<String>,
