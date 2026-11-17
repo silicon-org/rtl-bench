@@ -77,7 +77,7 @@ path = []                                # directories appended to PATH when a w
 env_dirs = { }                           # variable = directory of the design, set to its absolute path
 prepare = []                             # commands run in the run directory first, as word lists; for image conversion
 args = ["+TEST={workload}", "+ElfFile={image}"]   # arguments of the run; in args and prepare, {workload}, {image} (the copy of the image in the run directory) and {dir} (the run directory) are replaced
-cycles_pattern = "Cycles: ([0-9]+)"      # optional regular expression with one group: the cycles in the output
+cycles_pattern = "Cycles: ([0-9]+)"      # optional regular expression with one group: the cycles in the output (commas in the group are dropped: `1,234` is 1234)
 uart_file = "uart0.log"                  # file of the run directory with the UART text, for `uart` pass checks
 cycles_file = "perf.trace"               # optional: a file of the run directory that cycles_pattern reads instead of the output
 

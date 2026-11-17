@@ -525,13 +525,15 @@ fn run_cocotb(
     })
 }
 
-/// The cycle count that the pattern finds in the output.
+/// The cycle count that the pattern finds in the output; commas in the group are thousands separators.
 pub fn find_cycles(pattern: &str, output: &str) -> Result<u64, String> {
     let re = Regex::new(pattern).map_err(|e| format!("cycles_pattern: {e}"))?;
     let c = re
         .captures(output)
         .ok_or("the output has no cycle count (cycles_pattern did not match)")?;
-    c[1].parse::<u64>()
+    // a simulator may write thousands separators (`2,000`)
+    c[1].replace(',', "")
+        .parse::<u64>()
         .map_err(|e| format!("cycle count `{}`: {e}", &c[1]))
 }
 
@@ -826,6 +828,12 @@ mod tests {
     fn cycle_count_is_read_from_the_output() {
         let out = "Cnt[ 0] =    5712 Mcycle\nCnt[ 1] = 100 Minstret\n";
         assert_eq!(find_cycles(r"Cnt\[ ?0\] = +(\d+) Mcycle", out), Ok(5712));
+        assert_eq!(
+            find_cycles(r"cycleCnt = ([0-9,]+)", "cycleCnt = 1,234,567"),
+            Ok(1_234_567)
+        );
+        let bad = find_cycles(r"cycleCnt = ([0-9,]+)", "cycleCnt = ,").unwrap_err();
+        assert!(bad.contains("cycle count `,`"), "{bad}");
         let err = find_cycles(r"Cycles: (\d+)", out).unwrap_err();
         assert!(err.contains("no cycle count"), "{err}");
     }
