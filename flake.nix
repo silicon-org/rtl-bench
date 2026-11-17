@@ -261,8 +261,9 @@
       in
       {
         devShells.default = pkgs.mkShell {
-          # libelf, which the OpenTitan simulation links; zlib for the FST writer of Verilator 4 (NaxRiscv)
-          buildInputs = [ pkgs.elfutils pkgs.zlib ];
+          # libelf, which the OpenTitan simulation links; zlib for the FST writer of Verilator 4 (NaxRiscv); zlib, zstd and
+          # sqlite for the emu of the XiangShan difftest (image compression and ChiselDB)
+          buildInputs = [ pkgs.elfutils pkgs.zlib pkgs.zstd pkgs.sqlite ];
           packages = with pkgs; [
             verilator
             slang
