@@ -104,11 +104,13 @@
           '';
         };
         rv32 = pkgs.pkgsCross.riscv32-embedded.buildPackages;
-        # Vortex's makefiles call the 32-bit tools riscv32-unknown-elf-*.
+        # Vortex's and Caliptra's makefiles call the 32-bit tools riscv32-unknown-elf-*; Caliptra
+        # also runs the preprocessor (cpp) and size.
         riscv32Aliases = pkgs.runCommand "riscv32-unknown-elf-aliases" { } ''
           mkdir -p $out/bin
           ln -s ${rv32.gcc}/bin/riscv32-none-elf-gcc $out/bin/riscv32-unknown-elf-gcc
-          for tool in as ld nm objcopy objdump readelf; do
+          ln -s ${rv32.gcc}/bin/riscv32-none-elf-cpp $out/bin/riscv32-unknown-elf-cpp
+          for tool in as ld nm objcopy objdump readelf size; do
             ln -s ${rv32.binutils}/bin/riscv32-none-elf-$tool $out/bin/riscv32-unknown-elf-$tool
           done
         '';
