@@ -45,7 +45,8 @@ jobs:
         include:
           # The workloads are those that ran in under 60 s on the NAS (16 threads); a runner with 2 cores
           # needs longer. Left out, with their time on the NAS: opentitan.earlgrey otbn_smoketest (60 s),
-          # boom.smallv3 dhrystone (128 s).
+          # boom.smallv3 dhrystone (128 s), caliptra.core smoke_test_mldsa (218 s) and smoke_test_ecc_sign
+          # (496 s).
           - variant: wally.rv64gc
             workloads: ieu fpu coremark
           - variant: blackparrot.unicore
@@ -59,6 +60,11 @@ jobs:
             workloads: test_rom uart_smoketest crt_test
           - variant: boom.smallv3
             workloads: rv64ui-p-simple rv64ui-p-add
+          # The model of Caliptra took 425 s of wall time, 1767 s of CPU and 2.5 GB at most (the Verilator
+          # process) on the NAS with 16 jobs; a runner with 2 cores needs about 15 minutes of wall
+          # time for it (1767 s of CPU over 2 cores). This has not been measured on a runner.
+          - variant: caliptra.core
+            workloads: hello_world_iccm smoke_test_sha512
     steps:
       - name: Free disk space
         run: |

@@ -1,0 +1,232 @@
+[design]
+id = "caliptra"
+name = "Caliptra"
+description = "Open-source silicon root of trust: a VeeR EL2 core with SHA, HMAC, ECC, AES, key vaults and the Adams Bridge ML-DSA and ML-KEM accelerator."
+
+[source]
+repository = "https://github.com/chipsalliance/caliptra-rtl"
+commit = "49370266d12cb0c4a8f71b3a0ff7e54ba7d4866e"
+mode = "vendored"
+# Read from the files: 650 sources carry `SPDX-License-Identifier: Apache-2.0` (Microsoft, lowRISC and
+# Western Digital notices) and src/LICENSE is the Apache License 2.0. 17 files (SHA-2 and DOE cores) carry
+# the two-clause BSD notice of Secworks Sweden AB without an SPDX line; they stand in as the licence
+# files of BSD-2-Clause (sha256_core.v). Two firmware headers (libs/caliptra_isr/riscv-csr.h and
+# riscv-interrupts.h, not RTL) carry SPDX-License-Identifier: Unlicense next to the Apache-2.0 line.
+# The WB2AXIP files (skidbuffer.v, axi_addr.v) state the Apache License 2.0.
+licence = "Apache-2.0 AND BSD-2-Clause AND Unlicense"
+licence_files = [
+  "src/LICENSE",
+  "src/src/sha256/rtl/sha256_core.v",
+  "src/src/integration/test_suites/libs/caliptra_isr/riscv-csr.h",
+]
+
+[[source.dependency]]
+repository = "https://github.com/chipsalliance/adams-bridge"
+commit = "b77e3d899e828d626cfc2a0d26a6b5704cc121e0"
+licence = "Apache-2.0"
+licence_files = ["src/submodules/adams-bridge/LICENSE"]
+
+[[variant]]
+id = "core"
+description = "Caliptra Core in passive mode with the internal TRNG, AXI SoC interface and the default memory sizes."
+
+[variant.synth]
+top = "caliptra_top"
+language = "sv-2017"
+# One compilation unit: the lists of upstream name the macro and register headers as files, and the
+# macros apply to the files after them (the way VCS reads upstream's list).
+single_unit = true
+files = "variants/core/synth.f"
+include_dirs = [
+  "src/src/integration/rtl",
+  "src/src/integration/rtl/caliptra_reg",
+  "src/src/libs/rtl",
+  "src/src/keyvault/rtl",
+  "src/src/pcrvault/rtl",
+  "src/src/datavault/rtl",
+  "src/src/riscv_core/veer_el2/rtl",
+  "src/src/riscv_core/veer_el2/rtl/include",
+  "src/src/ahb_lite_bus/rtl",
+  "src/src/caliptra_prim/rtl",
+  "src/src/lc_ctrl/rtl",
+  "src/src/entropy_src/rtl",
+  "src/src/csrng/rtl",
+  "src/src/edn/rtl",
+  "src/src/caliptra_prim_generic/rtl",
+  "src/src/sha512/rtl",
+  "src/src/sha256/rtl",
+  "src/src/doe/rtl",
+  "src/src/sha512_masked/rtl",
+  "src/src/hmac/rtl",
+  "src/src/hmac_drbg/rtl",
+  "src/src/ecc/rtl",
+  "src/submodules/adams-bridge/src/abr_top/rtl",
+  "src/submodules/adams-bridge/src/abr_libs/rtl",
+  "src/submodules/adams-bridge/src/abr_sampler_top/rtl",
+  "src/submodules/adams-bridge/src/rej_bounded/rtl",
+  "src/submodules/adams-bridge/src/rej_sampler/rtl",
+  "src/submodules/adams-bridge/src/exp_mask/rtl",
+  "src/submodules/adams-bridge/src/sample_in_ball/rtl",
+  "src/submodules/adams-bridge/src/cbd_sampler/rtl",
+  "src/submodules/adams-bridge/src/abr_sha3/rtl",
+  "src/submodules/adams-bridge/src/abr_prim/rtl",
+  "src/submodules/adams-bridge/src/abr_prim_generic/rtl",
+  "src/submodules/adams-bridge/src/ntt_top/rtl",
+  "src/submodules/adams-bridge/src/barrett_reduction/rtl",
+  "src/submodules/adams-bridge/src/decompose/rtl",
+  "src/submodules/adams-bridge/src/sk_decode/rtl",
+  "src/submodules/adams-bridge/src/sk_encode/rtl",
+  "src/submodules/adams-bridge/src/makehint/rtl",
+  "src/submodules/adams-bridge/src/norm_check/rtl",
+  "src/submodules/adams-bridge/src/sig_encode_z/rtl",
+  "src/submodules/adams-bridge/src/sigdecode_h/rtl",
+  "src/submodules/adams-bridge/src/sig_decode_z/rtl",
+  "src/submodules/adams-bridge/src/pk_decode/rtl",
+  "src/submodules/adams-bridge/src/power2round/rtl",
+  "src/submodules/adams-bridge/src/compress/rtl",
+  "src/submodules/adams-bridge/src/decompress/rtl",
+  "src/src/axi/rtl",
+  "src/src/soc_ifc/rtl",
+  "src/src/kmac/rtl",
+  "src/src/aes/rtl",
+  "src/src/caliptra_tlul/rtl",
+  "src/src/sha3/rtl",
+]
+# CALIPTRA_INTERNAL_TRNG: the default of tools/scripts/Makefile and the define of the rtl_lint target of
+# src/integration/config/compile.yml (the entropy source and the CSRNG inside the top, not the TRNG
+# interface to the SoC). The address width of the DMA manager keeps its default of 48 bits
+# (src/integration/rtl/config_defines.svh), as the Verilator flow builds it.
+defines = { CALIPTRA_INTERNAL_TRNG = "" }
+# The top has AXI interface ports (s_axi_*, m_axi_*) and memory export interfaces: slang refuses them on a
+# top level module unless told to allow them. The testbench connects them.
+slang_flags = ["--allow-toplevel-iface-ports"]
+# The SRAMs of the core (ICCM, DCCM, instruction cache), the mailbox and the instruction memory sit outside
+# the top (el2_mem_export, mbox_sram_*, imem_*; the testbench has them). The macros are the register-file
+# and RAM modules that stay inside: ECC register file, Adams Bridge sample-in-ball and w1 memories.
+macros = [
+  { module = "ecc_ram_tdp_file", model = "src/src/ecc/rtl/ecc_ram_tdp_file.sv" },
+  { module = "sib_mem", model = "src/submodules/adams-bridge/src/sample_in_ball/rtl/sib_mem.sv" },
+  { module = "decompose_w1_mem", model = "src/submodules/adams-bridge/src/decompose/rtl/decompose_w1_mem.sv" },
+]
+
+# No period: upstream ships no SDC and publishes no frequency for an open PDK.
+[[variant.clock]]
+name = "clk"
+port = "clk"
+
+# Reset pins of src/integration/rtl/caliptra_top.sv. No delay fractions: upstream has no I/O constraints.
+[variant.constraints]
+resets = ["cptra_rst_b", "cptra_pwrgood"]
+
+false_paths = [{ from = "cptra_rst_b" }, { from = "cptra_pwrgood" }]
+
+# Simulation: upstream's Verilator testbench (src/integration/tb/caliptra_top_tb.sv, C++ main
+# test_caliptra_top_tb.cpp) as the verilator-build target of tools/scripts/Makefile builds it, from
+# src/integration/config/caliptra_top_tb.vf: the synthesis files, then the testbench, assertions,
+# coverage interfaces and the DPI models of JTAG.
+[variant.sim]
+simulator = "verilator"
+top = "caliptra_top_tb"
+files = "variants/core/sim.f"
+include_dirs = [
+  "src/src/integration/asserts",
+  "src/src/integration/tb",
+  "src/src/entropy_src/tb",
+  "src/src/sha512/coverage",
+  "src/src/sha256/coverage",
+  "src/src/hmac/coverage",
+  "src/src/hmac_drbg/coverage",
+  "src/src/ecc/coverage",
+  "src/src/soc_ifc/coverage",
+  "src/src/pcrvault/coverage",
+  "src/src/keyvault/coverage",
+  "src/submodules/adams-bridge/src/abr_top/coverage",
+  "src/src/abr/coverage",
+  "src/src/axi/coverage",
+  "src/src/aes/coverage",
+  "src/src/doe/coverage",
+  "src/src/integration/coverage",
+]
+# RV_OPENSOURCE: +define+RV_OPENSOURCE of the Makefile. The internal TRNG is inherited from the synthesis
+# defines, as the Makefile sets it for firmware and hardware alike (CALIPTRA_INTERNAL_TRNG=1).
+defines = { RV_OPENSOURCE = "" }
+# The options of the verilator-build target of tools/scripts/Makefile: --cc and its own main (--exe),
+# --timing, --timescale 1ns/100ps, --autoflush, the warning waivers of its `suppress` variable, the lint
+# waivers of caliptra_top_tb.vlt, -std=c++17 and the include paths of the DPI sources. Added: -Wno-fatal,
+# so that the warnings of Verilator 5.052 (upstream documents 5.012) do not stop the build.
+verilator_flags = [
+  "--exe", "--timing", "--timescale", "1ns/100ps", "--autoflush", "-Wno-fatal",
+  "-Wno-WIDTH", "-Wno-UNOPTFLAT", "-Wno-LITENDIAN", "-Wno-CMPCONST", "-Wno-MULTIDRIVEN", "-Wno-UNPACKED", "-Wno-LATCH",
+  "${DESIGN_DIR}/src/src/caliptra_prim/lint/caliptra_prim_onehot_check.vlt",
+  "${DESIGN_DIR}/src/src/caliptra_prim/lint/caliptra_prim_arbiter.vlt",
+  "${DESIGN_DIR}/src/src/csrng/lint/csrng.vlt",
+  "${DESIGN_DIR}/src/src/caliptra_prim/lint/caliptra_prim_max_tree.vlt",
+  "${DESIGN_DIR}/src/src/caliptra_prim/lint/caliptra_prim_sum_tree.vlt",
+  "-CFLAGS", "-std=c++17",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/src/integration/test_suites/libs/jtagdpi",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/src/integration/test_suites/libs/tcp_server",
+]
+dut = "caliptra_top_tb.caliptra_top_dut"
+support = [
+  "src/src/caliptra_prim/lint/caliptra_prim_onehot_check.vlt",
+  "src/src/caliptra_prim/lint/caliptra_prim_arbiter.vlt",
+  "src/src/csrng/lint/csrng.vlt",
+  "src/src/caliptra_prim/lint/caliptra_prim_max_tree.vlt",
+  "src/src/caliptra_prim/lint/caliptra_prim_sum_tree.vlt",
+]
+# The testbench reads program.hex, iccm.hex, dccm.hex and mailbox.hex from the run directory, which the
+# Makefile makes from the ELF file of the test with these objcopy commands (target program.hex).
+# A file that the test has no section for stays absent, and the testbench skips it.
+prepare = [["sh", "-c", """
+objcopy=riscv32-unknown-elf-objcopy
+$objcopy -O verilog -R .data_iccm0 -R .data_iccm1 -R .data_iccm2 -R .iccm -R .dccm -R .eh_frame --pad-to 0x18000 --no-change-warnings {image} program.hex
+$objcopy -O verilog -j .data_iccm0 -j .data_iccm1 -j .data_iccm2 -j .dccm --change-section-lma .data_iccm0-0x50000000 --change-section-lma .data_iccm1-0x50000000 --change-section-lma .data_iccm2-0x50000000 --change-section-lma .dccm-0x50000000 --pad-to 0x40000 --no-change-warnings {image} dccm.hex
+$objcopy -O verilog -j .iccm --change-section-address .iccm=0 --pad-to 0x40000 --no-change-warnings {image} iccm.hex || true
+$objcopy -O verilog -j .mailbox --gap-fill 0x0 --change-section-address .mailbox=0 --pad-to 0x40000 --no-change-warnings {image} mailbox.hex || true
+"""]]
+# The testbench prints "Finished : minstret = N, mcycle = N" when the firmware reports success.
+cycles_pattern = "mcycle = ([0-9]+)"
+
+# Firmware of upstream's test suite (src/integration/test_suites), built by recipe/build-workloads.sh. Each
+# test ends by writing 0xff to the mailbox, on which the testbench prints "* TESTCASE PASSED" (a failing
+# test writes 0x01 and prints "* TESTCASE FAILED"). max_cycles is about ten times the cycles that
+# `rtl-bench sim` printed (mcycle of the testbench line "Finished"). timeout_s is about five times the wall
+# time on the NAS (the model runs at about 1.5 thousand cycles per second), as a limit for a hang: the
+# testbench itself stops at 20 million cycles.
+
+# Smoke test: the ROM flow of the core and a print from firmware that runs in the ICCM. 5328 cycles, 4 s.
+[[variant.sim.workload]]
+id = "hello_world_iccm"
+image = "sim/hello_world_iccm.exe"
+sources = ["src/src/integration/test_suites/hello_world_iccm/caliptra_isr.h", "src/src/integration/test_suites/hello_world_iccm/hello_world_iccm.s", "src/tools/scripts/Makefile"]
+pass = { kind = "stdout", contains = "* TESTCASE PASSED" }
+max_cycles = 55000
+timeout_s = 60
+
+# The SHA-512 engine against known answers, over the AHB interface. 65744 cycles, 42 s.
+[[variant.sim.workload]]
+id = "smoke_test_sha512"
+image = "sim/smoke_test_sha512.exe"
+sources = ["src/src/integration/test_suites/smoke_test_sha512/caliptra_isr.h", "src/src/integration/test_suites/smoke_test_sha512/smoke_test_sha512.c", "src/tools/scripts/Makefile"]
+pass = { kind = "stdout", contains = "* TESTCASE PASSED" }
+max_cycles = 650000
+timeout_s = 300
+
+# The ML-DSA-87 engine of Adams Bridge: key generation, signing and verification of a fixed vector.
+# 363965 cycles, 218 s.
+[[variant.sim.workload]]
+id = "smoke_test_mldsa"
+image = "sim/smoke_test_mldsa.exe"
+sources = ["src/src/integration/test_suites/smoke_test_mldsa/caliptra_isr.h", "src/src/integration/test_suites/smoke_test_mldsa/smoke_test_mldsa.c", "src/src/integration/test_suites/smoke_test_mldsa/smoke_test_mldsa.ld", "src/tools/scripts/Makefile"]
+pass = { kind = "stdout", contains = "* TESTCASE PASSED" }
+max_cycles = 3600000
+timeout_s = 1200
+
+# The ECC secp384r1 engine: signing. 800313 cycles, 496 s.
+[[variant.sim.workload]]
+id = "smoke_test_ecc_sign"
+image = "sim/smoke_test_ecc_sign.exe"
+sources = ["src/src/integration/test_suites/smoke_test_ecc_sign/caliptra_isr.h", "src/src/integration/test_suites/smoke_test_ecc_sign/smoke_test_ecc_sign.c", "src/tools/scripts/Makefile"]
+pass = { kind = "stdout", contains = "* TESTCASE PASSED" }
+max_cycles = 8000000
+timeout_s = 2400
