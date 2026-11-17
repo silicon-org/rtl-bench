@@ -46,7 +46,7 @@ jobs:
           # The workloads are those that ran in under 60 s on the NAS (16 threads); a runner with 2 cores
           # needs longer. Left out, with their time on the NAS: opentitan.earlgrey otbn_smoketest (60 s),
           # boom.smallv3 dhrystone (128 s), caliptra.core smoke_test_mldsa (218 s) and smoke_test_ecc_sign
-          # (496 s), gemmini.rocket16x16 tiled_matmul_ws (673 s) and conv (1170 s). Every workload of
+          # (496 s), gemmini.rocket16x16 tiled_matmul_ws (673 s) and conv (1170 s), saturn.rocketv256d128 vec-mixed_width_mask (61 s) and vec-igemm (619 s). Every workload of
           # naxriscv.rv64 is in: the longest, coremark, took 10 s on the NAS.
           - variant: wally.rv64gc
             workloads: ieu fpu coremark
@@ -83,6 +83,10 @@ jobs:
           # Not measured on a runner.
           - variant: bsg-manycore.pod_1x1_4x2y
             workloads: hello bsg_mutex bsg_barrier_amoadd_test vcache_atomic_inc
+          # The model of Saturn took 40 s of wall time, 233 s of CPU and 0.7 GB at most on the NAS with 16 jobs. This has not
+          # been measured on a runner.
+          - variant: saturn.rocketv256d128
+            workloads: rv64ui-p-simple vec-strlen
     steps:
       - name: Free disk space
         run: |
