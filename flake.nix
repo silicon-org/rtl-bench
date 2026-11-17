@@ -114,6 +114,13 @@
             ln -s ${rv32.binutils}/bin/riscv32-none-elf-$tool $out/bin/riscv32-unknown-elf-$tool
           done
         '';
+        # The nixpkgs 32 bit newlib is built for rv32imafdc and the ilp32d ABI. The VeeR EL2 core of Caliptra
+        # has no FPU, and its firmware is built for rv32imc with ilp32, which cannot link to those libraries.
+        newlibRv32imc = pkgs.pkgsCross.riscv32-embedded.newlib.overrideAttrs (o: {
+          preConfigure = o.preConfigure + ''
+            export CFLAGS_FOR_TARGET="-g -O2 -march=rv32imc_zicsr_zifencei -mabi=ilp32"
+          '';
+        });
         # OpenTitan builds its software with Bazel, whose hermetic toolchains are dynamically linked
         # programs and whose actions use /bin/bash and srec_cat: a FHS environment for them.
         otFhs = pkgs.buildFHSEnv {
@@ -165,6 +172,7 @@
           # uv runs upstream scripts (elf2hex) with the Python above, never downloads one.
           UV_PYTHON_DOWNLOADS = "never";
           RISCV_NEWLIB_MEDANY = "${newlibMedany}/riscv64-none-elf/lib";
+          RISCV_NEWLIB_RV32IMC = "${newlibRv32imc}/riscv32-none-elf/lib";
           RISCV_EMPTY_CRT = "${emptyCrt}";
           VX_SOFTFLOAT = "${vxSoftfloat}";
           VX_RAMULATOR = "${vxRamulator}";
