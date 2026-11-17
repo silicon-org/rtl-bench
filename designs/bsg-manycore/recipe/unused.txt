@@ -1,0 +1,81 @@
+src/basejump_stl/bsg_mem/bsg_ascii_to_rom.py generator of the tag boot ROM of the testbench (machines/Makefile.verilator), run by recipe/resolve.py
+src/basejump_stl/bsg_mem/bsg_mem_dma.hpp included by a listed file
+src/basejump_stl/bsg_test/bsg_nonsynth_dpi_clock_gen.hpp included by a listed file
+src/basejump_stl/imports/DRAMSim3/ext/fmt/include/fmt/core.h included by a listed file
+src/basejump_stl/imports/DRAMSim3/ext/fmt/include/fmt/format-inl.h included by a listed file
+src/basejump_stl/imports/DRAMSim3/ext/fmt/include/fmt/format.h included by a listed file
+src/basejump_stl/imports/DRAMSim3/ext/headers/INIReader.h included by a listed file
+src/basejump_stl/imports/DRAMSim3/ext/headers/json.hpp included by a listed file
+src/basejump_stl/imports/DRAMSim3/src/bankstate.h included by a listed file
+src/basejump_stl/imports/DRAMSim3/src/blood_graph.h included by a listed file
+src/basejump_stl/imports/DRAMSim3/src/channel_state.h included by a listed file
+src/basejump_stl/imports/DRAMSim3/src/command_queue.h included by a listed file
+src/basejump_stl/imports/DRAMSim3/src/common.h included by a listed file
+src/basejump_stl/imports/DRAMSim3/src/configuration.h included by a listed file
+src/basejump_stl/imports/DRAMSim3/src/controller.h included by a listed file
+src/basejump_stl/imports/DRAMSim3/src/dram_system.h included by a listed file
+src/basejump_stl/imports/DRAMSim3/src/hmc.h included by a listed file
+src/basejump_stl/imports/DRAMSim3/src/memory_system.h included by a listed file
+src/basejump_stl/imports/DRAMSim3/src/refresh.h included by a listed file
+src/basejump_stl/imports/DRAMSim3/src/simple_stats.h included by a listed file
+src/basejump_stl/imports/DRAMSim3/src/thermal.h included by a listed file
+src/basejump_stl/imports/DRAMSim3/src/thermal_config.h included by a listed file
+src/basejump_stl/imports/DRAMSim3/src/timing.h included by a listed file
+src/bsg_manycore/machines/platform.mk machine selection of the software makefiles
+src/bsg_manycore/machines/pod_1x1/Makefile.machine.include machine definition of a variant
+src/bsg_manycore/machines/pod_1x1_4X2Y/Makefile.machine.include machine definition of a variant
+src/bsg_manycore/software/bsg_manycore_lib/bsg_barrier.h workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_barrier_amoadd.S workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_barrier_amoadd.h workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_cuda_lite_barrier.c workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_cuda_lite_barrier.h workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_cuda_lite_runtime.h workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_group_strider.hpp workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_hw_barrier.h workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_hw_barrier_config_init.h workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_manycore.h workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_manycore.hpp workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_manycore_arch.h workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_manycore_asm.h workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_manycore_atomic.h workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_manycore_gather_scatter.h workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_manycore_patch.h workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_mcs_mutex.S workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_mcs_mutex.h workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_mcs_mutex.hpp workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_mutex.h workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_mutex.hpp workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_newlib_intf.c workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_printf.c workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_set_tile_x_y.c workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_set_tile_x_y.h workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_striped_array.hpp workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_tile_config_vars.c workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_tile_config_vars.h workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_tile_group_barrier.h workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_tile_group_barrier.hpp workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_tilegroup.h workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/bsg_manycore_lib/bsg_token_queue.h workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/mk/.gitignore workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/mk/Makefile.builddefs workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/mk/Makefile.dimensions workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/mk/Makefile.llvminstall workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/mk/Makefile.master workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/mk/Makefile.paths workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/mk/Makefile.tail_rules workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/mk/Makefile.verilog workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/mk/Makefile.verilog.loader workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/py/bsg_manycore_link_gen.py workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/py/nbf.py workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/spmd/Makefile.include workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/spmd/common/args.c workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/spmd/common/crt.S workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/spmd/common/link_dmem.ld workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/spmd/common/link_dmem2.ld workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/spmd/common/link_dram.ld workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/spmd/common/link_dram2.ld workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/spmd/common/spike.c workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/spmd/common/spike.h workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/software/spmd/common/spike.ld workload build (recipe/build-workloads.sh): makefiles, runtime library, linker script generator
+src/bsg_manycore/testbenches/py/bsg_tag_trace_gen.py generator of the tag boot ROM of the testbench (machines/Makefile.verilator), run by recipe/resolve.py
+src/bsg_manycore/testbenches/py/pod_trace_gen.py generator of the tag boot ROM of the testbench (machines/Makefile.verilator), run by recipe/resolve.py
