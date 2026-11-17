@@ -87,6 +87,15 @@ jobs:
           # been measured on a runner.
           - variant: saturn.rocketv256d128
             workloads: rv64ui-p-simple vec-strlen
+          # Taxi: every workload is in. On the NAS (16 jobs) the models took 12 s (eth_phy_10g, 0.45 GB at most) and
+          # 13 s (kc705_gmii, 0.45 GB at most) of wall time, and the workloads 2 s (each of the three of eth_phy_10g)
+          # and 6 s. Left out: the elaboration of taxi.kc705_gmii with slang, which 12.1 does not do (`$size` of an array
+          # of interfaces, recipe/README.md of taxi); Verilator builds it. Not measured on a runner.
+          - variant: taxi.eth_phy_10g
+            workloads: run_test_rx run_test_tx run_test_rx_frame_sync
+          - variant: taxi.kc705_gmii
+            workloads: run_test
+            elaborate: "no"
     steps:
       - name: Free disk space
         run: |
@@ -98,6 +107,7 @@ jobs:
       - name: Build rtl-bench
         run: nix develop -c cargo build --release
       - name: Elaborate the synthesis view with slang
+        if: matrix.elaborate != 'no'
         run: nix develop -c target/release/rtl-bench elaborate ${{ matrix.variant }}
       - name: Run the workloads in Verilator
         run: |
