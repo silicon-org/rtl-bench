@@ -75,6 +75,14 @@ jobs:
           # been measured on a runner.
           - variant: naxriscv.rv64
             workloads: rv64ui-p-add rv64ui-p-sd rv64um-p-mul rv64ua-p-amoadd_d dhrystone coremark
+          # The model of bsg-manycore.pod_1x1_4x2y took 34 s of wall time, 186 s of CPU and 4.1 GB at most (all processes, with the
+          # first run) on the NAS with 16 jobs, and 92 s of wall time and 2.2 GB with 2 jobs; every workload took under 3 s. Left
+          # out: bsg-manycore.pod_1x1 (128 tiles): its model took 546 s of wall time and 2212 s of CPU with 16 jobs, peaked at 15 GB
+          # (the verilator process alone holds 4.1 GB during the C++ compile, with two compile jobs of up to 1.4 GB on top), and its
+          # workloads took 41 s (hello), 63 s (bsg_mutex), 134 s (bsg_barrier_amoadd_test) and 158 s (vcache_atomic_inc).
+          # Not measured on a runner.
+          - variant: bsg-manycore.pod_1x1_4x2y
+            workloads: hello bsg_mutex bsg_barrier_amoadd_test vcache_atomic_inc
     steps:
       - name: Free disk space
         run: |
