@@ -168,6 +168,8 @@
             gawk
             which
             wallyShims
+            # the build.sh of gemmini-rocc-tests runs autoconf for its Makefile
+            autoconf
           ];
           # uv runs upstream scripts (elf2hex) with the Python above, never downloads one.
           UV_PYTHON_DOWNLOADS = "never";
