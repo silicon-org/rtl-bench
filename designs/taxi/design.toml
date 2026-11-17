@@ -1,0 +1,150 @@
+[design]
+id = "taxi"
+name = "Taxi"
+description = "AXI, AXI-Stream, Ethernet, PCIe and NIC cores in SystemVerilog with interfaces; here the 10GBASE-R PCS and the 1G Ethernet example core of a KC705."
+
+# Two licences, read from the files: the library (rtl/, tb/) is CERN-OHL-S-2.0; the SystemVerilog interfaces
+# (taxi_axis_if, taxi_axil_if), two stream helpers (taxi_axis_null_src, taxi_axis_tie) and the example design
+# (fpga_core.sv with its test) are MIT. The repository has no MIT text, only the SPDX line in each file, so one
+# of those files stands in as the licence file of MIT.
+[source]
+repository = "https://github.com/fpganinja/taxi"
+commit = "cc70b270b910d369ab1ad7b3855e76399fd461f1"
+mode = "vendored"
+licence = "CERN-OHL-S-2.0 AND MIT"
+licence_files = ["src/taxi/LICENSE", "src/taxi/src/axis/rtl/taxi_axis_if.sv"]
+
+# The 10GBASE-R PCS (64b/66b encoder, decoder, scrambler, block lock, bit error monitor, PRBS31) with plain ports.
+# The top is the DUT of upstream's own test (src/eth/tb/taxi_eth_phy_10g); the parameters are those of its Makefile.
+# The upstream tops with the MAC (taxi_eth_mac_phy_10g and its relatives) have SystemVerilog interface ports, and a
+# top cannot have them without something that instantiates the interfaces (slang: "unconnected interface port"), so
+# they are not variants.
+[[variant]]
+id = "eth_phy_10g"
+description = "10GBASE-R PCS, 64-bit datapath, no gearbox interface: encoder, decoder, scrambler, block lock, BER monitor."
+
+[variant.synth]
+top = "taxi_eth_phy_10g"
+language = "sv-2017"
+files = "variants/eth_phy_10g/synth.f"
+parameters = { DATA_W = "64", CTRL_W = "8", HDR_W = "2", TX_GBX_IF_EN = "0", RX_GBX_IF_EN = "0", BIT_REVERSE = "1'b0", SCRAMBLER_DISABLE = "1'b0", PRBS31_EN = "1'b1", TX_SERDES_PIPELINE = "2", RX_SERDES_PIPELINE = "2", BITSLIP_HIGH_CYCLES = "0", BITSLIP_LOW_CYCLES = "7", COUNT_125US = "195" }
+
+# No period: upstream publishes timing for FPGAs only. The datapath clock of 64 bits per 66-bit block at the
+# 10.3125 GBd line rate of 10GBASE-R is 156.25 MHz (IEEE 802.3 clause 49), the 6.4 ns clock of the upstream test.
+[[variant.clock]]
+name = "tx_clk"
+port = "tx_clk"
+
+[[variant.clock]]
+name = "rx_clk"
+port = "rx_clk"
+
+[variant.constraints]
+resets = ["tx_rst", "rx_rst"]
+
+[variant.sim]
+simulator = "verilator"
+top = "taxi_eth_phy_10g"
+files = "variants/eth_phy_10g/sim.f"
+dut = "taxi_eth_phy_10g"
+parameters = { DATA_W = "64", CTRL_W = "8", HDR_W = "2", TX_GBX_IF_EN = "0", RX_GBX_IF_EN = "0", BIT_REVERSE = "1'b0", SCRAMBLER_DISABLE = "1'b0", PRBS31_EN = "1'b1", TX_SERDES_PIPELINE = "2", RX_SERDES_PIPELINE = "2", BITSLIP_HIGH_CYCLES = "0", BITSLIP_LOW_CYCLES = "7", COUNT_125US = "195" }
+support = ["src/taxi/src/eth/tb/baser.py", "src/taxi/src/eth/tb/taxi_eth_phy_10g/baser.py"]
+
+# The upstream test module, unmodified. Timescale: COCOTB_HDL_TIMEUNIT and COCOTB_HDL_TIMEPRECISION of its Makefile.
+# The seed is arbitrary, fixed so that runs repeat.
+[variant.sim.cocotb]
+dir = "src/taxi/src/eth/tb/taxi_eth_phy_10g"
+module = "test_taxi_eth_phy_10g"
+timescale = "1ns/1ps"
+config = "${COCOTB_ENV}/bin/cocotb-config"
+random_seed = 1
+
+[[variant.sim.workload]]
+id = "run_test_rx"
+tests = ["run_test_rx"]
+pass = { kind = "cocotb", cases = 1 }
+timeout_s = 300
+
+[[variant.sim.workload]]
+id = "run_test_tx"
+tests = ["run_test_tx"]
+pass = { kind = "cocotb", cases = 1 }
+timeout_s = 300
+
+[[variant.sim.workload]]
+id = "run_test_rx_frame_sync"
+tests = ["run_test_rx_frame_sync"]
+pass = { kind = "cocotb", cases = 1 }
+timeout_s = 300
+
+# The example core of the KC705 board (fpga_core.sv): three 1G Ethernet MACs (GMII, RGMII, SGMII or 1000BASE-X
+# PHY attach) with FIFOs, XFCP over UART with a statistics module and an I2C master, all joined by SystemVerilog
+# interfaces. The board shell around it (fpga.sv) has the pads and the clocking and is not part of the variant.
+# The parameters are those of the Makefile of upstream's test (src/eth/example/KC705/fpga/tb/fpga_core). SIM = 1 is
+# what they set to avoid vendor primitives: the primitives of the I/O library sit in generate branches that only
+# elaborate with SIM = 0.
+[[variant]]
+id = "kc705_gmii"
+description = "KC705 1G Ethernet example core with the GMII PHY, XFCP over UART, I2C master and statistics."
+
+[variant.synth]
+top = "fpga_core"
+language = "sv-2017"
+files = "variants/kc705_gmii/synth.f"
+# slang: the files of the interfaces (taxi_axis_if, taxi_axil_if) have no `timescale while the other files have one.
+# slang 12.1 still fails on `$size` of an array of interfaces (recipe/README.md, "Known tool gap").
+slang_flags = ["--timescale", "1ns/1ps"]
+parameters = { SIM = "1'b1", VENDOR = "\"XILINX\"", FAMILY = "\"kintex7\"", USE_CLK90 = "1'b1", BASET_PHY_TYPE = "\"GMII\"", SFP_INVERT = "1'b1" }
+
+# No period: upstream publishes timing for FPGAs only. fpga_core takes a 125 MHz clock (its port comment), the
+# 1000BASE-X and GMII rate of IEEE 802.3.
+[[variant.clock]]
+name = "clk"
+port = "clk"
+
+[[variant.clock]]
+name = "clk90"
+port = "clk90"
+
+[[variant.clock]]
+name = "sfp_gmii_clk"
+port = "sfp_gmii_clk"
+
+[[variant.clock]]
+name = "phy_sgmii_clk"
+port = "phy_sgmii_clk"
+
+[[variant.clock]]
+name = "phy_rgmii_rx_clk"
+port = "phy_rgmii_rx_clk"
+
+[[variant.clock]]
+name = "phy_gmii_rx_clk"
+port = "phy_gmii_rx_clk"
+
+[[variant.clock]]
+name = "phy_gmii_tx_clk"
+port = "phy_gmii_tx_clk"
+
+[variant.constraints]
+resets = ["rst", "sfp_gmii_rst", "phy_sgmii_rst"]
+
+[variant.sim]
+simulator = "verilator"
+top = "fpga_core"
+files = "variants/kc705_gmii/sim.f"
+dut = "fpga_core"
+parameters = { SIM = "1'b1", VENDOR = "\"XILINX\"", FAMILY = "\"kintex7\"", USE_CLK90 = "1'b1", BASET_PHY_TYPE = "\"GMII\"", SFP_INVERT = "1'b1" }
+
+[variant.sim.cocotb]
+dir = "src/taxi/src/eth/example/KC705/fpga/tb/fpga_core"
+module = "test_fpga_core"
+timescale = "1ns/1ps"
+config = "${COCOTB_ENV}/bin/cocotb-config"
+random_seed = 1
+
+[[variant.sim.workload]]
+id = "run_test"
+tests = ["run_test"]
+pass = { kind = "cocotb", cases = 1 }
+timeout_s = 300
