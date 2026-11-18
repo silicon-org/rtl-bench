@@ -96,6 +96,12 @@ jobs:
           - variant: taxi.kc705_gmii
             workloads: run_test
             elaborate: "no"
+          # xiangshan.minimal: elaboration only (slang took 1.4 s of wall time and 1.7 GB on the NAS). Its model is left out: it took
+          # 1734 s of wall time and 6730 s of CPU with 16 jobs on the NAS and 8.4 GB for the verilator process alone (the compile
+          # jobs, 1.4 GB each, come on top: 34 GB for all processes at the peak), which does not fit the 7 GB of a runner. The
+          # workloads, coremark-2-iteration and microbench, took 1293 s and 513 s of simulation on the NAS.
+          - variant: xiangshan.minimal
+            workloads: ""
     steps:
       - name: Free disk space
         run: |
