@@ -1,0 +1,216 @@
+[design]
+id = "xiangshan"
+name = "XiangShan"
+description = "Out-of-order RISC-V core (the Kunminghu microarchitecture) that Chisel generates, in its MinimalConfig."
+
+[source]
+repository = "https://github.com/OpenXiangShan/XiangShan"
+commit = "0303f76a84fd705d32f6f0434c63c55e2ff02186"
+mode = "vendored"
+# XiangShan is Mulan PSL v2 (LICENSE; every source file carries the notice). The others come from the submodules that
+# the generator and the simulator use (below): Apache-2.0 (SiFive files of rocket-chip, huancun, coupledL2, openLLC and
+# cde) and BSD-3-Clause (UC Berkeley: rocket-chip, hardfloat).
+licence = "MulanPSL-2.0 AND Apache-2.0 AND BSD-3-Clause"
+licence_files = ["licences/xiangshan/LICENSE"]
+
+# The submodules of the commit (.gitmodules), at the commits it pins. All are compiled into the generator (build.sc).
+# rocket-chip is the fork of OpenXiangShan, with its own submodules cde and hardfloat.
+[[source.dependency]]
+repository = "https://github.com/OpenXiangShan/rocket-chip"
+commit = "2c117a41bb187add61f92a018be5f2e5ab044a41"
+licence = "BSD-3-Clause AND Apache-2.0"
+licence_files = ["licences/rocket-chip/LICENSE.Berkeley", "licences/rocket-chip/LICENSE.jtag", "licences/rocket-chip/LICENSE.SiFive"]
+
+[[source.dependency]]
+repository = "https://github.com/chipsalliance/cde"
+commit = "52768c97a27b254c0cc0ac9401feb55b29e18c28"
+licence = "Apache-2.0"
+licence_files = ["licences/cde/LICENSE"]
+
+[[source.dependency]]
+repository = "https://github.com/ucb-bar/berkeley-hardfloat"
+commit = "d93aa570806013dea479a92ba9bb33d1f2d4f69f"
+licence = "BSD-3-Clause"
+licence_files = ["licences/hardfloat/LICENSE"]
+
+[[source.dependency]]
+repository = "https://github.com/OpenXiangShan/huancun"
+commit = "3fc7e7e0c2127c601b2a7d180f49845421a86d8d"
+licence = "MulanPSL-2.0 AND Apache-2.0"
+licence_files = ["licences/huancun/LICENSE", "licences/huancun/LICENSE.SiFive"]
+
+[[source.dependency]]
+repository = "https://github.com/OpenXiangShan/coupledL2"
+commit = "024b7261b9ddcde8782ad6fd3f222745f29f7432"
+licence = "MulanPSL-2.0 AND Apache-2.0"
+licence_files = ["licences/coupledL2/LICENSE", "licences/coupledL2/LICENSE.SiFive"]
+
+[[source.dependency]]
+repository = "https://github.com/OpenXiangShan/OpenLLC"
+commit = "0bf044830921ab3aa9c55152e247f0ea14f827ab"
+licence = "MulanPSL-2.0 AND Apache-2.0"
+licence_files = ["licences/openLLC/LICENSE", "licences/openLLC/LICENSE.SiFive"]
+
+# utility and fudian have no licence file; their sources carry the notice "XiangShan is licensed under Mulan PSL v2",
+# so the licence file of XiangShan is the one that names it.
+[[source.dependency]]
+repository = "https://github.com/OpenXiangShan/utility"
+commit = "051d07961ce1679891b2ea7f1ea2f19c0a00a3fd"
+licence = "MulanPSL-2.0"
+licence_files = ["licences/xiangshan/LICENSE"]
+
+[[source.dependency]]
+repository = "https://github.com/OpenXiangShan/fudian"
+commit = "e1bd4695ca7beb36a5ce7357e9527ad9e95b9ec1"
+licence = "MulanPSL-2.0"
+licence_files = ["licences/xiangshan/LICENSE"]
+
+[[source.dependency]]
+repository = "https://github.com/OpenXiangShan/YunSuan"
+commit = "f568aa01568e48dced707721af761288ca51b5de"
+licence = "MulanPSL-2.0"
+licence_files = ["licences/yunsuan/LICENSE"]
+
+# The IMSIC Verilog of OpenAIA (src/main/resources/aia) is copied into the output as it is (the imsic_*.sv files of the
+# file list). The repository has no licence file and the files say only "Copyright bosc": the licence below is that of
+# XiangShan (the same institute, BOSC, writes both), not one that OpenAIA states.
+[[source.dependency]]
+repository = "https://github.com/OpenXiangShan/OpenAIA"
+commit = "9464aee3c77b021a037f28aa1b3fe53c71b516f6"
+licence = "MulanPSL-2.0"
+licence_files = ["licences/xiangshan/LICENSE"]
+
+# The difftest harness of the emu (C++ and Verilog of src/difftest/).
+[[source.dependency]]
+repository = "https://github.com/OpenXiangShan/difftest"
+commit = "e3cd34c3492ce0c2dde0078ecce966d98d79c2e4"
+licence = "MulanPSL-2.0"
+licence_files = ["licences/difftest/LICENSE"]
+
+[[variant]]
+id = "minimal"
+description = "MinimalConfig, one core: the smallest configuration of XiangShan, as upstream's CI builds it (make verilog CONFIG=MinimalConfig)."
+
+# Synthesis top: XSTop, the SoC that `make verilog` writes (build/rtl/XSTop.sv; TOP in the Makefile). It is the release
+# output of the Makefile (--fpga-platform --disable-all --remove-assert --reset-gen): no difftest, no assertions, no
+# performance counters. The file list is the filelist.f of the run, then the memory modules (array_*_ext, which
+# scripts/vlsi_mem_gen writes from the XSTop.sv.conf of the run: the 27 memories of the chip). They are flop arrays
+# with the ports of a macro and stay macros.
+[variant.synth]
+top = "XSTop"
+language = "sv-2017"
+files = "variants/minimal/synth.f"
+include_dirs = []
+macros = [
+  { module = "array_0_0_ext", model = "src/generated/synth/rtl/array_0_0_ext.v" },
+  { module = "array_0_1_ext", model = "src/generated/synth/rtl/array_0_1_ext.v" },
+  { module = "array_0_2_ext", model = "src/generated/synth/rtl/array_0_2_ext.v" },
+  { module = "array_0_3_ext", model = "src/generated/synth/rtl/array_0_3_ext.v" },
+  { module = "array_0_4_ext", model = "src/generated/synth/rtl/array_0_4_ext.v" },
+  { module = "array_0_ext", model = "src/generated/synth/rtl/array_0_ext.v" },
+  { module = "array_10_ext", model = "src/generated/synth/rtl/array_10_ext.v" },
+  { module = "array_11_ext", model = "src/generated/synth/rtl/array_11_ext.v" },
+  { module = "array_12_ext", model = "src/generated/synth/rtl/array_12_ext.v" },
+  { module = "array_13_ext", model = "src/generated/synth/rtl/array_13_ext.v" },
+  { module = "array_14_ext", model = "src/generated/synth/rtl/array_14_ext.v" },
+  { module = "array_15_ext", model = "src/generated/synth/rtl/array_15_ext.v" },
+  { module = "array_16_ext", model = "src/generated/synth/rtl/array_16_ext.v" },
+  { module = "array_17_ext", model = "src/generated/synth/rtl/array_17_ext.v" },
+  { module = "array_18_ext", model = "src/generated/synth/rtl/array_18_ext.v" },
+  { module = "array_19_ext", model = "src/generated/synth/rtl/array_19_ext.v" },
+  { module = "array_1_ext", model = "src/generated/synth/rtl/array_1_ext.v" },
+  { module = "array_2_ext", model = "src/generated/synth/rtl/array_2_ext.v" },
+  { module = "array_3_ext", model = "src/generated/synth/rtl/array_3_ext.v" },
+  { module = "array_4_ext", model = "src/generated/synth/rtl/array_4_ext.v" },
+  { module = "array_5_ext", model = "src/generated/synth/rtl/array_5_ext.v" },
+  { module = "array_6_ext", model = "src/generated/synth/rtl/array_6_ext.v" },
+  { module = "array_7_ext", model = "src/generated/synth/rtl/array_7_ext.v" },
+  { module = "array_8_ext", model = "src/generated/synth/rtl/array_8_ext.v" },
+  { module = "array_9_ext", model = "src/generated/synth/rtl/array_9_ext.v" },
+  { module = "array_ext", model = "src/generated/synth/rtl/array_ext.v" },
+  { module = "array_mcp2_0_ext", model = "src/generated/synth/rtl/array_mcp2_0_ext.v" },
+]
+
+# No period and no I/O delays: upstream publishes no constraint file and no frequency for an open PDK. XSTop has the
+# clock inputs io_clock (the SoC and the core), io_rtc_clock and io_systemjtag_jtag_TCK; io_reset and io_systemjtag_reset
+# are the resets.
+[[variant.clock]]
+name = "clk"
+port = "io_clock"
+
+[[variant.clock]]
+name = "rtc_clk"
+port = "io_rtc_clock"
+
+[[variant.clock]]
+name = "jtag_tck"
+port = "io_systemjtag_jtag_TCK"
+
+[variant.constraints]
+resets = ["io_reset", "io_systemjtag_reset"]
+
+# Simulation: the emu of the difftest (difftest/verilator.mk, as `make emu CONFIG=MinimalConfig` builds it) with Verilator
+# 5.052: SimTop of `make sim-verilog` (with the difftest arguments of the Makefile), the Verilog and the C++ of the
+# harness (ram, flash, UART, JTAG, difftest, ChiselDB, constants, the Spike disassembler plugin) and the code that the
+# run writes (difftest-dpic.cpp, chisel_db.cpp, constantin.cpp). The flags are those of verilator.mk and common.mk:
+# the defines of the RTL, --x-assign unique, --output-split 30000, +define+DIFFTEST for the difftest, --instr-count-dpi 1
+# (Verilator 4.210 and later), --no-timing and +define+VERILATOR_5 (Verilator 5), -DENABLE_CHISEL_DB and
+# -DENABLE_CONSTANTIN (WITH_CHISELDB and WITH_CONSTANTIN default to 1), -DNUM_CORES=1, and the libraries sqlite3, zlib and
+# zstd. Left out: profile guided optimisation (PGO_*), waves and snapshots (EMU_TRACE, EMU_SNAPSHOT) and
+# -DNOOP_HOME: the emu reads $NOOP_HOME/build/constantin.txt, so NOOP_HOME is set to src/generated/sim (env_dirs).
+[variant.sim]
+simulator = "verilator"
+top = "SimTop"
+standalone = true
+files = "variants/minimal/sim.f"
+# the directories of the Verilog and the C++ headers (the C++ includes also come in through -CFLAGS)
+include_dirs = [
+  "src/generated/sim/build/rtl", "src/generated/sim/build/generated-src", "src/generated/sim/build", "src/difftest/config",
+  "src/difftest/src/test/csrc/common", "src/difftest/src/test/csrc/difftest", "src/difftest/src/test/csrc/plugin/include",
+  "src/difftest/src/test/csrc/plugin/spikedasm", "src/difftest/src/test/csrc/verilator",
+]
+support = ["src/generated/sim/build/constantin.txt"]
+dut = "SimTop.l_soc"
+defines = { VERILATOR = "1", PRINTF_COND = "1", RANDOMIZE_REG_INIT = "", RANDOMIZE_MEM_INIT = "", RANDOMIZE_GARBAGE_ASSIGN = "", RANDOMIZE_DELAY = "0", DIFFTEST = "", VERILATOR_5 = "" }
+verilator_flags = [
+  "--exe", "-O3", "--x-assign", "unique", "--assert", "-Wno-STMTDLY", "-Wno-WIDTH", "--max-num-width", "150000",
+  "--output-split", "30000", "--output-split-cfuncs", "30000", "--no-timing", "--instr-count-dpi", "1", "--quiet-stats",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/difftest/src/test/csrc/common", "-CFLAGS", "-I${DESIGN_DIR}/src/difftest/config",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/generated/sim/build/generated-src", "-CFLAGS", "-I${DESIGN_DIR}/src/difftest/src/test/csrc/plugin/include",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/difftest/src/test/csrc/difftest", "-CFLAGS", "-I${DESIGN_DIR}/src/generated/sim/build",
+  "-CFLAGS", "-I${DESIGN_DIR}/src/difftest/src/test/csrc/plugin/spikedasm", "-CFLAGS", "-I${DESIGN_DIR}/src/difftest/src/test/csrc/verilator",
+  "-CFLAGS", "-DENABLE_CHISEL_DB", "-CFLAGS", "-DENABLE_CONSTANTIN", "-CFLAGS", "-DVERILATOR", "-CFLAGS", "-DNUM_CORES=1",
+  "-CFLAGS", "--std=c++17", "-CFLAGS", "-DVERILATOR_4_210",
+  "-LDFLAGS", "-lsqlite3", "-LDFLAGS", "-lz", "-LDFLAGS", "-lzstd", "-LDFLAGS", "-ldl",
+]
+env_dirs = { NOOP_HOME = "src/generated/sim" }
+# `--no-diff`: no reference model. The difftest would compare every commit with NEMU or Spike (--diff <library>, the
+# prebuilt riscv64-nemu-interpreter-so of ready-to-run); without it the emu still ends the run at the trap
+# instruction of the workload and reports it (`HIT GOOD TRAP`), the pass check here.
+args = ["-i", "{image}", "--no-diff"]
+cycles_pattern = 'cycleCnt = ([0-9,]*[0-9])'
+
+# Workloads: the prebuilt images of the ready-to-run repository (commit c9c1451937e61eefe5adfcf6e197d0ee7ca188f0, the
+# submodule of XiangShan), copied to sim/ unmodified. Its README says they are built by the CI of OpenXiangShan/nexus-am
+# (apps/coremark with ITERATIONS=2, apps/microbench). The emu ends a run at the trap instruction of the program and
+# prints `HIT GOOD TRAP` (or `HIT BAD TRAP`, with a nonzero exit code), and `cycleCnt` with the cycles.
+# ready-to-run and nexus-am have no licence file: see recipe/README.md.
+# max_cycles: about ten times the cycles that `rtl-bench sim` printed (NAS, Verilator 5.052, one thread, no reference
+# model): coremark-2-iteration 542257 (1293 s of wall time, 0.05 GB), microbench 366729 (513 s, 0.05 GB). The emu runs at 420 to 715 cycles/s;
+# its own limit (-C) is max_cycles, and timeout_s is six times the longer run.
+
+[[variant.sim.workload]]
+id = "coremark-2-iteration"
+image = "sim/coremark-2-iteration.bin"
+pass = { kind = "stdout", contains = "HIT GOOD TRAP" }
+args = ["-C", "5500000"]
+max_cycles = 5500000
+timeout_s = 7200
+
+[[variant.sim.workload]]
+id = "microbench"
+image = "sim/microbench.bin"
+pass = { kind = "stdout", contains = "HIT GOOD TRAP" }
+args = ["-C", "3700000"]
+max_cycles = 3700000
+timeout_s = 7200

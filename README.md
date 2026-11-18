@@ -28,6 +28,7 @@ The release is a tarball. Tools pin it by hash.
 | Taxi | kc705_gmii | [fpganinja/taxi](https://github.com/fpganinja/taxi) at `cc70b270b910` | CERN-OHL-S-2.0 AND MIT | vendored |
 | Vortex | default | [vortexgpgpu/vortex](https://github.com/vortexgpgpu/vortex) at `ca18837bd087` | Apache-2.0 | vendored |
 | CORE-V Wally | rv64gc | [openhwfoundation/cvw](https://github.com/openhwfoundation/cvw) at `90259bdca99c` | (Apache-2.0 WITH SHL-2.1) AND MIT AND Apache-2.0 | vendored |
+| XiangShan | minimal | [OpenXiangShan/XiangShan](https://github.com/OpenXiangShan/XiangShan) at `0303f76a84fd` | MulanPSL-2.0 AND Apache-2.0 AND BSD-3-Clause | vendored |
 <!-- designs:end -->
 
 Generated from `designs/*/design.toml` by `rtl-bench table`.
