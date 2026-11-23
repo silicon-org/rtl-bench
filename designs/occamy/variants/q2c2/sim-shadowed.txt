@@ -1,0 +1,4 @@
+src/deps/register_interface/src/reg_to_apb.sv
+src/deps/clint/src/clint_reg_pkg.sv
+src/deps/clint/src/clint_reg_top.sv
+src/deps/clint/src/clint.sv

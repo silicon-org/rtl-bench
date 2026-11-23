@@ -1,0 +1,437 @@
+[design]
+id = "occamy"
+name = "Occamy"
+description = "Many-core RISC-V system of ETH Zurich: a CVA6 host, Snitch clusters in quadrants, an AXI network and HBM2E ports, as its generator writes it."
+
+# The generator is Occamy's own (util/occamygen and the Makefile of target/sim) at the commit below, run by
+# recipe/generate.sh. Every dependency is at the revision of Bender.lock, not at the one that Bender.yml
+# names: Bender.yml asks for the branch `occamy` of snitch_cluster, which no longer exists upstream, and
+# Bender.lock has da57b043dfe0ba563a55a9d83bf362873c713648, which is reachable by hash only.
+[source]
+repository = "https://github.com/pulp-platform/occamy"
+commit = "d5d0d8320bb633c36319e5477006d4c17cf0e448"
+mode = "vendored"
+# hw/ is Solderpad 0.51; util/ and sw/ are Apache-2.0 (src/occamy/LICENSE); the 9 files of CVA6 that say
+# `Apache-2.0 WITH SHL-2.0` and apb_uart (LGPL-2.1-or-later in its file headers, no licence file) come
+# with their texts in licences/ (recipe/fetch-licences.sh).
+licence = "SHL-0.51 AND Apache-2.0 AND Apache-2.0 WITH SHL-2.0 AND LGPL-2.1-or-later"
+licence_files = [
+  "src/occamy/LICENSE",
+  "src/occamy/hw/LICENSE",
+  "licences/SHL-0.51.txt",
+  "licences/SHL-2.0.txt",
+  "licences/LGPL-2.1.txt",
+]
+
+# The dependencies of Bender.lock (and the three trees that Occamy carries in hw/vendor), with the commits
+# of the lock files. The Solderpad texts of the repositories are the same as licences/SHL-0.51.txt.
+
+[[source.dependency]]
+repository = "https://github.com/pulp-platform/apb"
+commit = "77ddf073f194d44b9119949d2421be59789e69ae"
+licence = "SHL-0.51"
+licence_files = ["src/deps/apb/LICENSE", "licences/SHL-0.51.txt"]
+
+[[source.dependency]]
+repository = "https://github.com/pulp-platform/apb_timer"
+commit = "0cbc6cbc26c94b8e3bf27cc058c48ef89ea3d4c3"
+licence = "SHL-0.51"
+licence_files = ["src/deps/apb_timer/LICENSE", "licences/SHL-0.51.txt"]
+
+[[source.dependency]]
+repository = "https://github.com/pulp-platform/apb_uart"
+commit = "b6145341df79137ac584c83e9c081f80a7a40440"
+licence = "LGPL-2.1-or-later"
+licence_files = ["licences/LGPL-2.1.txt"]
+
+[[source.dependency]]
+repository = "https://github.com/pulp-platform/axi"
+commit = "587355b77b8ce94dcd600efbd5d5bd118ff913a7"
+licence = "SHL-0.51"
+licence_files = ["src/deps/axi/LICENSE", "licences/SHL-0.51.txt"]
+
+[[source.dependency]]
+repository = "https://github.com/pulp-platform/axi_riscv_atomics"
+commit = "430838a10a9bdf1e381d4fcb33907428f3273420"
+licence = "SHL-0.51"
+licence_files = ["src/deps/axi_riscv_atomics/LICENSE", "licences/SHL-0.51.txt"]
+
+[[source.dependency]]
+repository = "https://github.com/pulp-platform/axi_stream"
+commit = "54891ff40455ca94a37641b9da4604647878cc07"
+licence = "SHL-0.51"
+licence_files = ["src/deps/axi_stream/LICENSE", "licences/SHL-0.51.txt"]
+
+[[source.dependency]]
+repository = "https://github.com/pulp-platform/clint"
+commit = "e1357c1d0edddde458aec58363473605f51e539e"
+licence = "SHL-0.51"
+licence_files = ["src/deps/clint/LICENSE", "licences/SHL-0.51.txt"]
+
+[[source.dependency]]
+repository = "https://github.com/pulp-platform/cluster_icache"
+commit = "0e1fb6751d9684d968ba7fb40836e6118b448ecd"
+licence = "SHL-0.51"
+licence_files = ["src/deps/cluster_icache/LICENSE", "licences/SHL-0.51.txt"]
+
+[[source.dependency]]
+repository = "https://github.com/pulp-platform/common_cells"
+commit = "c27bce39ebb2e6bae52f60960814a2afca7bd4cb"
+licence = "SHL-0.51"
+licence_files = ["src/deps/common_cells/LICENSE", "licences/SHL-0.51.txt"]
+
+[[source.dependency]]
+repository = "https://github.com/pulp-platform/common_verification"
+commit = "9c07fa860593b2caabd9b5681740c25fac04b878"
+licence = "SHL-0.51"
+licence_files = ["src/deps/common_verification/LICENSE", "licences/SHL-0.51.txt"]
+
+[[source.dependency]]
+repository = "https://github.com/pulp-platform/cvfpu"
+commit = "a8e0cba6dd50f357ece73c2c955d96efc3c6c315"
+licence = "SHL-0.51 AND Apache-2.0"
+licence_files = ["src/deps/fpnew/LICENSE.solderpad", "src/deps/fpnew/LICENSE.apache", "licences/SHL-0.51.txt"]
+
+[[source.dependency]]
+repository = "https://github.com/pulp-platform/fpu_div_sqrt_mvp"
+commit = "86e1f558b3c95e91577c41b2fc452c86b04e85ac"
+licence = "SHL-0.51"
+licence_files = ["src/deps/fpu_div_sqrt_mvp/LICENSE", "licences/SHL-0.51.txt"]
+
+[[source.dependency]]
+repository = "https://github.com/pulp-platform/iDMA"
+commit = "c12caf59bb482fe44b27361f6924ad346b2d22fe"
+licence = "SHL-0.51"
+licence_files = ["src/deps/idma/LICENSE", "licences/SHL-0.51.txt"]
+
+[[source.dependency]]
+repository = "https://github.com/pulp-platform/obi"
+commit = "5321106817e177d6c16ecc4daa922b96b1bc946b"
+licence = "SHL-0.51"
+licence_files = ["src/deps/obi/LICENSE", "licences/SHL-0.51.txt"]
+
+[[source.dependency]]
+repository = "https://github.com/pulp-platform/register_interface"
+commit = "ae616e5a1ec2b41e72d200e5ab09c65e94aebd3d"
+licence = "SHL-0.51"
+licence_files = ["src/deps/register_interface/LICENSE", "licences/SHL-0.51.txt"]
+
+[[source.dependency]]
+repository = "https://github.com/pulp-platform/riscv-dbg"
+commit = "358f90110220adf7a083f8b65d157e836d706236"
+licence = "SHL-0.51 AND Apache-2.0"
+licence_files = ["src/deps/riscv-dbg/LICENSE", "src/deps/riscv-dbg/LICENSE.SiFive", "licences/SHL-0.51.txt"]
+
+[[source.dependency]]
+repository = "https://github.com/pulp-platform/scm"
+commit = "998466d2a3c2d7d572e43d2666d93c4f767d8d60"
+licence = "SHL-0.51"
+licence_files = ["src/deps/scm/LICENSE", "licences/SHL-0.51.txt"]
+
+[[source.dependency]]
+repository = "https://github.com/pulp-platform/snitch_cluster"
+commit = "da57b043dfe0ba563a55a9d83bf362873c713648"
+licence = "SHL-0.51 AND Apache-2.0"
+licence_files = ["src/deps/snitch_cluster/hw/LICENSE", "src/deps/snitch_cluster/LICENSE", "licences/SHL-0.51.txt"]
+
+[[source.dependency]]
+repository = "https://github.com/pulp-platform/tech_cells_generic"
+commit = "a9cae21902e75b1434328ecf36f85327ba5717de"
+licence = "SHL-0.51"
+licence_files = ["src/deps/tech_cells_generic/LICENSE", "licences/SHL-0.51.txt"]
+
+[[source.dependency]]
+repository = "https://github.com/pulp-platform/axi_tlb"
+commit = "82730842f5037fef9754dfd1212c7711289e5439"
+licence = "SHL-0.51 AND Apache-2.0"
+licence_files = ["src/occamy/hw/vendor/pulp_platform_axi_tlb/LICENSE", "src/occamy/LICENSE", "licences/SHL-0.51.txt"]
+
+[[source.dependency]]
+repository = "https://github.com/pulp-platform/cva6"
+commit = "6a6b8c656b8bb789d50b9c84cce1b99c74966884"
+licence = "SHL-0.51 AND Apache-2.0 WITH SHL-2.0"
+licence_files = ["licences/cva6/LICENSE", "licences/SHL-2.0.txt", "src/occamy/LICENSE", "licences/SHL-0.51.txt"]
+
+[[source.dependency]]
+repository = "https://github.com/pulp-platform/opentitan_peripherals"
+commit = "e38ebcc6dbfe30e03b7548f5acb87a61d0fc17bd"
+licence = "Apache-2.0"
+licence_files = ["src/occamy/hw/vendor/pulp_platform_opentitan_peripherals/LICENSE"]
+
+[[variant]]
+id = "full"
+description = "full.hjson of upstream, unmodified: 6 quadrants of 4 clusters of 9 cores, 8 HBM2E ports."
+
+# Synthesis top: occamy_top, the chip of the generator (the testharness is the testbench around it). The
+# file list is `bender script flist-plus` of the generated tree for the targets in recipe/README.md
+# (rtl, synthesis, cv64a6_imafdc_sv39, occamy_sim, snitch_cluster): the generic tech_cells_generic, with the
+# behavioural tc_sram and tc_clk. HBM2E, the die-to-die links, PCIe, the FLLs and the boot ROM are ports of
+# occamy_top; the testbench serves them.
+[variant.synth]
+top = "occamy_top"
+language = "sv-2017"
+files = "variants/full/synth.f"
+include_dirs = [
+  "src/deps/apb/include",
+  "src/deps/axi/include",
+  "src/deps/axi_stream/include",
+  "src/deps/common_cells/include",
+  "src/deps/idma/src/include",
+  "src/deps/idma/target/rtl/include",
+  "src/deps/idma/test",
+  "src/deps/obi/include",
+  "src/deps/register_interface/include",
+  "src/deps/snitch_cluster/hw/mem_interface/include",
+  "src/deps/snitch_cluster/hw/reqrsp_interface/include",
+  "src/deps/snitch_cluster/hw/snitch/include",
+  "src/deps/snitch_cluster/hw/snitch_ssr/include",
+  "src/deps/snitch_cluster/hw/tcdm_interface/include",
+  "src/occamy/hw/spm_interface/include",
+  "src/occamy/hw/vendor/openhwgroup_cva6/common/local/util",
+  "src/occamy/hw/vendor/pulp_platform_axi_tlb/include",
+]
+slang_flags = [
+  # The file lists include code that synthesis tools skip: the instruction tracer of CVA6 sits between
+  # `pragma translate_off` and `translate_on` (100 files of src/ use these comments), and its files are not in the synthesis list.
+  "--translate-off-format", "pragma,translate_off,translate_on",
+  # riscv-dbg src/dmi_jtag.sv line 62 uses dtmcs_q before its declaration at line 68, which the simulator of upstream accepts.
+  "--allow-use-before-declare",
+  # axi_intf.sv of axi and core/include/axi_intf.sv of CVA6 both define AXI_BUS, AXI_BUS_ASYNC and AXI_LITE
+  # (and each defines more): upstream relies on the later definition winning.
+  "-Wno-duplicate-definition",
+]
+defines = { WB_DCACHE = "1", SNITCH_ENABLE_PERF = "", TARGET_CV64A6_IMAFDC_SV39 = "", TARGET_OCCAMY_SIM = "", TARGET_RTL = "", TARGET_SNITCH_CLUSTER = "", TARGET_SYNTHESIS = "" }
+# The memories: the behavioural SRAM of tech_cells_generic (tc_sram, tc_sram_impl), whose macro of the
+# taped-out chip is chosen by the technology; the sram_cfgs_i ports carry its configuration.
+macros = [
+  { module = "tc_sram", model = "src/deps/tech_cells_generic/src/rtl/tc_sram.sv" },
+  { module = "tc_sram_impl", model = "src/deps/tech_cells_generic/src/rtl/tc_sram_impl.sv" },
+]
+
+# The system clock drives CVA6, the clusters, the groups and the serial links; the peripheral clock the
+# peripherals. Both come from FLLs on the chip. GF12LP+ is not an open PDK, so there are no periods.
+[[variant.clock]]
+name = "clk_i"
+port = "clk_i"
+[[variant.clock.reference]]
+frequency_mhz = 1000
+process = "GF12LP+"
+source = "occamy docs/rm/4_clocking.md at d5d0d8320bb633c36319e5477006d4c17cf0e448 (clock table: System 1 GHz) and docs/rm/1_overview.md (designed to operate at 1GHz; GF12LP+ technology)"
+
+[[variant.clock]]
+name = "clk_periph_i"
+port = "clk_periph_i"
+[[variant.clock.reference]]
+frequency_mhz = 300
+process = "GF12LP+"
+source = "occamy docs/rm/4_clocking.md at d5d0d8320bb633c36319e5477006d4c17cf0e448 (clock table: Peripheral 0.3 GHz)"
+
+[variant.constraints]
+resets = ["rst_ni", "rst_periph_ni", "jtag_trst_ni"]
+false_paths = [{ from = "rst_ni" }, { from = "rst_periph_ni" }, { from = "jtag_trst_ni" }]
+sdc = []
+
+# Simulation: upstream's testharness (generated) around occamy_top with Verilator. It has its own file
+# list (the simulation targets of bender take the FPGA flavour of scm and add the behavioural testbench
+# files). The C++ is upstream's Verilator flow of snitch_cluster (tb_bin.cc, verilator_lib.cc: the fesvr
+# frontend that loads the ELF and the boot ROM into the memory model, the DPI of the memories) and the
+# UART DPI of Occamy.
+[variant.sim]
+simulator = "verilator"
+top = "testharness"
+standalone = true
+files = "variants/full/sim.f"
+include_dirs = [
+  "src/occamy/hw/vendor/openhwgroup_cva6/core/include",
+  # sim.hh, tb_lib.hh and ipc.hh (headers of the C++ files) and uartdpi.c, which sim/uartdpi.cc includes
+  "src/deps/snitch_cluster/target/common/test",
+  "src/occamy/target/sim/test/uartdpi",
+]
+# bootrom.bin, which bootrom.cc includes into the model with .incbin (the boot ROM of upstream, built from bootrom.S)
+support = ["src/occamy/target/sim/test/bootrom.bin"]
+undefine = [
+"TARGET_SYNTHESIS",
+]
+defines = { TARGET_TECH_CELLS_GENERIC_EXCLUDE_DEPRECATED = "", TARGET_VERILATOR = "", COMMON_CELLS_ASSERTS_OFF = "" }
+dut = "testharness.i_occamy"
+uart_file = "uart0.log"
+cycles_pattern = "Cycles: ([0-9]+)"
+verilator_flags = [
+  # The C++ main is sim/main.cc.
+  "--exe",
+  # The testharness has delays (the 32.768 kHz RTC), so the model keeps time; main.cc advances it.
+  "--timing", "--timescale", "1ns/1ps",
+  # The options of snitch_cluster's Verilator flow (target/common/common.mk, VLT_FLAGS), which builds
+  # the same kind of model: warnings of the upstream style are not errors, loops unroll to 1024.
+  "-Wno-BLKANDNBLK", "-Wno-LITENDIAN", "-Wno-CASEINCOMPLETE", "-Wno-CMPCONST", "-Wno-WIDTH", "-Wno-WIDTHCONCAT",
+  "-Wno-UNSIGNED", "-Wno-UNOPTFLAT", "-Wno-fatal", "--unroll-count", "1024",
+  # Verilator joins the C++ files into one group per job (16): the 28 files of one quadrant landed in one group of
+  # about 100 MB of C++, which one compiler process worked on for more than 20 minutes. 128 groups balance the work.
+  "--output-groups", "128",
+  # sim.hh, tb_lib.hh and ipc.hh of snitch_cluster, uartdpi.h of Occamy and the fesvr headers (CY_SPIKE: Spike
+  # of the nix shell); bootrom.cc includes bootrom.bin with .incbin, which the assembler looks up in -Wa,-I.
+  "-CFLAGS", "-pthread -I${DESIGN_DIR}/src/deps/snitch_cluster/target/common/test -I${DESIGN_DIR}/src/occamy/target/sim/test/uartdpi -I${CY_SPIKE}/include -Wa,-I${DESIGN_DIR}/src/occamy/target/sim/test",
+  "-LDFLAGS", "-pthread -L${CY_SPIKE}/lib -Wl,-rpath,${CY_SPIKE}/lib -lfesvr -lutil",
+]
+args = ["{image}"]
+
+# The host program of upstream (target/sim/sw/host/apps/hello_world): CVA6 runs it from the boot ROM,
+# initialises the UART of the SoC and prints over it, then reports the exit code to the host over HTIF.
+# recipe/build-workloads.sh builds it with the Makefile of upstream and the RISC-V GCC of the nix shell.
+[[variant.sim.workload]]
+id = "hello_world"
+image = "sim/hello_world.full.elf"
+sources = [
+  "src/occamy/target/sim/sw/host/apps/hello_world/src/hello_world.c",
+  "src/occamy/target/sim/sw/host/apps/hello_world/Makefile",
+  "src/occamy/target/sim/sw/host/apps/common.mk",
+  "src/occamy/target/sim/sw/host/toolchain.mk",
+  "src/occamy/target/sim/sw/host/runtime/host.c",
+  "src/occamy/target/sim/sw/host/runtime/host.h",
+  "src/occamy/target/sim/sw/host/runtime/host.ld",
+  "src/occamy/target/sim/sw/host/runtime/start.S",
+]
+pass = { kind = "uart", contains = "Hello world!" }
+# 1225800 cycles on q2c2, counted by sim/main.cc (rising edges of clk_i; the UART at 115200 baud on a 1 GHz clock
+# is most of them). The program does not use the clusters, so full needs about as many.
+max_cycles = 2000000
+timeout_s = 3600
+
+[[variant]]
+id = "q2c2"
+description = "Our configuration, full.hjson with nr_s1_quadrant = 2 and s1_quadrant.nr_clusters = 2 (recipe/q2c2.diff): 2 quadrants of 2 clusters, the smallest variant with several quadrants and several clusters per quadrant."
+
+# Synthesis top: occamy_top, the chip of the generator (the testharness is the testbench around it). The
+# file list is `bender script flist-plus` of the generated tree for the targets in recipe/README.md
+# (rtl, synthesis, cv64a6_imafdc_sv39, occamy_sim, snitch_cluster): the generic tech_cells_generic, with the
+# behavioural tc_sram and tc_clk. HBM2E, the die-to-die links, PCIe, the FLLs and the boot ROM are ports of
+# occamy_top; the testbench serves them.
+[variant.synth]
+top = "occamy_top"
+language = "sv-2017"
+files = "variants/q2c2/synth.f"
+include_dirs = [
+  "src/deps/apb/include",
+  "src/deps/axi/include",
+  "src/deps/axi_stream/include",
+  "src/deps/common_cells/include",
+  "src/deps/idma/src/include",
+  "src/deps/idma/target/rtl/include",
+  "src/deps/idma/test",
+  "src/deps/obi/include",
+  "src/deps/register_interface/include",
+  "src/deps/snitch_cluster/hw/mem_interface/include",
+  "src/deps/snitch_cluster/hw/reqrsp_interface/include",
+  "src/deps/snitch_cluster/hw/snitch/include",
+  "src/deps/snitch_cluster/hw/snitch_ssr/include",
+  "src/deps/snitch_cluster/hw/tcdm_interface/include",
+  "src/occamy/hw/spm_interface/include",
+  "src/occamy/hw/vendor/openhwgroup_cva6/common/local/util",
+  "src/occamy/hw/vendor/pulp_platform_axi_tlb/include",
+]
+slang_flags = [
+  # The file lists include code that synthesis tools skip: the instruction tracer of CVA6 sits between
+  # `pragma translate_off` and `translate_on` (100 files of src/ use these comments), and its files are not in the synthesis list.
+  "--translate-off-format", "pragma,translate_off,translate_on",
+  # riscv-dbg src/dmi_jtag.sv line 62 uses dtmcs_q before its declaration at line 68, which the simulator of upstream accepts.
+  "--allow-use-before-declare",
+  # axi_intf.sv of axi and core/include/axi_intf.sv of CVA6 both define AXI_BUS, AXI_BUS_ASYNC and AXI_LITE
+  # (and each defines more): upstream relies on the later definition winning.
+  "-Wno-duplicate-definition",
+]
+defines = { WB_DCACHE = "1", SNITCH_ENABLE_PERF = "", TARGET_CV64A6_IMAFDC_SV39 = "", TARGET_OCCAMY_SIM = "", TARGET_RTL = "", TARGET_SNITCH_CLUSTER = "", TARGET_SYNTHESIS = "" }
+# The memories: the behavioural SRAM of tech_cells_generic (tc_sram, tc_sram_impl), whose macro of the
+# taped-out chip is chosen by the technology; the sram_cfgs_i ports carry its configuration.
+macros = [
+  { module = "tc_sram", model = "src/deps/tech_cells_generic/src/rtl/tc_sram.sv" },
+  { module = "tc_sram_impl", model = "src/deps/tech_cells_generic/src/rtl/tc_sram_impl.sv" },
+]
+
+# The system clock drives CVA6, the clusters, the groups and the serial links; the peripheral clock the
+# peripherals. Both come from FLLs on the chip. GF12LP+ is not an open PDK, so there are no periods.
+[[variant.clock]]
+name = "clk_i"
+port = "clk_i"
+[[variant.clock.reference]]
+frequency_mhz = 1000
+process = "GF12LP+"
+source = "occamy docs/rm/4_clocking.md at d5d0d8320bb633c36319e5477006d4c17cf0e448 (clock table: System 1 GHz) and docs/rm/1_overview.md (designed to operate at 1GHz; GF12LP+ technology)"
+
+[[variant.clock]]
+name = "clk_periph_i"
+port = "clk_periph_i"
+[[variant.clock.reference]]
+frequency_mhz = 300
+process = "GF12LP+"
+source = "occamy docs/rm/4_clocking.md at d5d0d8320bb633c36319e5477006d4c17cf0e448 (clock table: Peripheral 0.3 GHz)"
+
+[variant.constraints]
+resets = ["rst_ni", "rst_periph_ni", "jtag_trst_ni"]
+false_paths = [{ from = "rst_ni" }, { from = "rst_periph_ni" }, { from = "jtag_trst_ni" }]
+sdc = []
+
+# Simulation: upstream's testharness (generated) around occamy_top with Verilator. It has its own file
+# list (the simulation targets of bender take the FPGA flavour of scm and add the behavioural testbench
+# files). The C++ is upstream's Verilator flow of snitch_cluster (tb_bin.cc, verilator_lib.cc: the fesvr
+# frontend that loads the ELF and the boot ROM into the memory model, the DPI of the memories) and the
+# UART DPI of Occamy.
+[variant.sim]
+simulator = "verilator"
+top = "testharness"
+standalone = true
+files = "variants/q2c2/sim.f"
+include_dirs = [
+  "src/occamy/hw/vendor/openhwgroup_cva6/core/include",
+  # sim.hh, tb_lib.hh and ipc.hh (headers of the C++ files) and uartdpi.c, which sim/uartdpi.cc includes
+  "src/deps/snitch_cluster/target/common/test",
+  "src/occamy/target/sim/test/uartdpi",
+]
+# bootrom.bin, which bootrom.cc includes into the model with .incbin (the boot ROM of upstream, built from bootrom.S)
+support = ["src/occamy/target/sim/test/bootrom.bin"]
+undefine = [
+"TARGET_SYNTHESIS",
+]
+defines = { TARGET_TECH_CELLS_GENERIC_EXCLUDE_DEPRECATED = "", TARGET_VERILATOR = "", COMMON_CELLS_ASSERTS_OFF = "" }
+dut = "testharness.i_occamy"
+uart_file = "uart0.log"
+cycles_pattern = "Cycles: ([0-9]+)"
+verilator_flags = [
+  # The C++ main is sim/main.cc.
+  "--exe",
+  # The testharness has delays (the 32.768 kHz RTC), so the model keeps time; main.cc advances it.
+  "--timing", "--timescale", "1ns/1ps",
+  # The options of snitch_cluster's Verilator flow (target/common/common.mk, VLT_FLAGS), which builds
+  # the same kind of model: warnings of the upstream style are not errors, loops unroll to 1024.
+  "-Wno-BLKANDNBLK", "-Wno-LITENDIAN", "-Wno-CASEINCOMPLETE", "-Wno-CMPCONST", "-Wno-WIDTH", "-Wno-WIDTHCONCAT",
+  "-Wno-UNSIGNED", "-Wno-UNOPTFLAT", "-Wno-fatal", "--unroll-count", "1024",
+  # Verilator joins the C++ files into one group per job (16): the 28 files of one quadrant landed in one group of
+  # about 100 MB of C++, which one compiler process worked on for more than 20 minutes. 128 groups balance the work.
+  "--output-groups", "128",
+  # sim.hh, tb_lib.hh and ipc.hh of snitch_cluster, uartdpi.h of Occamy and the fesvr headers (CY_SPIKE: Spike
+  # of the nix shell); bootrom.cc includes bootrom.bin with .incbin, which the assembler looks up in -Wa,-I.
+  "-CFLAGS", "-pthread -I${DESIGN_DIR}/src/deps/snitch_cluster/target/common/test -I${DESIGN_DIR}/src/occamy/target/sim/test/uartdpi -I${CY_SPIKE}/include -Wa,-I${DESIGN_DIR}/src/occamy/target/sim/test",
+  "-LDFLAGS", "-pthread -L${CY_SPIKE}/lib -Wl,-rpath,${CY_SPIKE}/lib -lfesvr -lutil",
+]
+args = ["{image}"]
+
+# The host program of upstream (target/sim/sw/host/apps/hello_world): CVA6 runs it from the boot ROM,
+# initialises the UART of the SoC and prints over it, then reports the exit code to the host over HTIF.
+# recipe/build-workloads.sh builds it with the Makefile of upstream and the RISC-V GCC of the nix shell.
+[[variant.sim.workload]]
+id = "hello_world"
+image = "sim/hello_world.q2c2.elf"
+sources = [
+  "src/occamy/target/sim/sw/host/apps/hello_world/src/hello_world.c",
+  "src/occamy/target/sim/sw/host/apps/hello_world/Makefile",
+  "src/occamy/target/sim/sw/host/apps/common.mk",
+  "src/occamy/target/sim/sw/host/toolchain.mk",
+  "src/occamy/target/sim/sw/host/runtime/host.c",
+  "src/occamy/target/sim/sw/host/runtime/host.h",
+  "src/occamy/target/sim/sw/host/runtime/host.ld",
+  "src/occamy/target/sim/sw/host/runtime/start.S",
+]
+pass = { kind = "uart", contains = "Hello world!" }
+# 1225800 cycles on q2c2, counted by sim/main.cc (rising edges of clk_i; the UART at 115200 baud on a 1 GHz clock
+# is most of them). The program does not use the clusters, so full needs about as many.
+max_cycles = 2000000
+timeout_s = 3600

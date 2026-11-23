@@ -22,6 +22,8 @@ The release is a tarball. Tools pin it by hash.
 | Caliptra | core | [chipsalliance/caliptra-rtl](https://github.com/chipsalliance/caliptra-rtl) at `49370266d12c` | Apache-2.0 AND BSD-2-Clause AND Unlicense | vendored |
 | Gemmini | rocket16x16 | [ucb-bar/chipyard](https://github.com/ucb-bar/chipyard) at `157dd69e49b9` | BSD-3-Clause AND Apache-2.0 AND BSD-2-Clause | vendored |
 | NaxRiscv | rv64 | [SpinalHDL/NaxRiscv](https://github.com/SpinalHDL/NaxRiscv) at `9f452d50560d` | MIT AND BSD-3-Clause AND Apache-2.0 | vendored |
+| Occamy | full | [pulp-platform/occamy](https://github.com/pulp-platform/occamy) at `d5d0d8320bb6` | SHL-0.51 AND Apache-2.0 AND Apache-2.0 WITH SHL-2.0 AND LGPL-2.1-or-later | vendored |
+| Occamy | q2c2 | [pulp-platform/occamy](https://github.com/pulp-platform/occamy) at `d5d0d8320bb6` | SHL-0.51 AND Apache-2.0 AND Apache-2.0 WITH SHL-2.0 AND LGPL-2.1-or-later | vendored |
 | OpenTitan Earl Grey | earlgrey | [lowRISC/opentitan](https://github.com/lowRISC/opentitan) at `96c62c527b18` | Apache-2.0 AND SHL-0.51 | vendored |
 | Saturn | rocketv256d128 | [ucb-bar/chipyard](https://github.com/ucb-bar/chipyard) at `157dd69e49b9` | BSD-3-Clause AND Apache-2.0 AND BSD-2-Clause | vendored |
 | Taxi | eth_phy_10g | [fpganinja/taxi](https://github.com/fpganinja/taxi) at `cc70b270b910` | CERN-OHL-S-2.0 AND MIT | vendored |

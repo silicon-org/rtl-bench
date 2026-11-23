@@ -1,0 +1,14 @@
+--- /home/zarubaf/work/occamy-work/up-occamy/target/sim/cfg/full.hjson	2026-11-23 14:23:11.252130331 +0100
++++ q2c2.hjson	2026-11-23 14:33:10.422890903 +0100
+@@ -85,9 +85,9 @@
+     }
+     narrow_xbar_slv_id_width: 4,
+     narrow_xbar_user_width: 5, // clog2(total number of clusters)
+-    nr_s1_quadrant: 6,
++    nr_s1_quadrant: 2,
+     s1_quadrant: {
+-      nr_clusters: 4,
++      nr_clusters: 2,
+       // number of pending transactions on the narrow/wide network
+       narrow_trans: 32,
+       wide_trans: 32,

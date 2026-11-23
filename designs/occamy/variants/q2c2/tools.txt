@@ -1,0 +1,12 @@
+bender 0.28.2
+verible v0.0-4148-g1ea007ec
+clang-format 21.1.8
+python Python 3.12.16
+hjson 3.0.2
+Mako 1.4.1
+jsonref 1.1.0
+jsonschema 4.26.0
+PyYAML 6.0.3
+tabulate 0.10.0
+setuptools 80.9.0
+GNU Make 4.4.1
