@@ -727,6 +727,13 @@ pub fn licence_matches(expr: &str, text: &str) -> bool {
         }
         "SHL-0.51" => has("Solderpad Hardware License") && has("0.51"),
         "SHL-2.1" => has("Solderpad Hardware License") && has("version 2.1"),
+        // The SHL-2.0 text names itself "Solderpad Hardware Licence v2.0" (solderpad.org/licenses/SHL-2.0).
+        "SHL-2.0" => has("Solderpad Hardware Licence") && has("v2.0"),
+        // The text of the LGPL does not say "or later" (that is the choice of the file header, which
+        // carries the SPDX line); both ids are stated by the one text of version 2.1.
+        "LGPL-2.1" | "LGPL-2.1-only" | "LGPL-2.1-or-later" => {
+            has("GNU LESSER GENERAL PUBLIC LICENSE") && has("Version 2.1")
+        }
         "ISC" => has("Permission to use, copy, modify, and/or distribute this software"),
         "CERN-OHL-S-2.0" => has("CERN Open Hardware Licence Version 2 - Strongly Reciprocal"),
         "MulanPSL-2.0" => has("Mulan Permissive Software License") && has("Mulan PSL v2"),
@@ -947,6 +954,56 @@ timeout_s = 60
         assert_eq!(
             unstated("SHL-2.1", std::slice::from_ref(&old)),
             Some("SHL-2.1".to_string())
+        );
+    }
+
+    #[test]
+    fn shl_2_0_text_is_recognised_and_told_apart() {
+        let text = "Solderpad Hardware Licence v2.0\n\nThis licence operates as a wraparound licence to the Apache License Version 2.0\n";
+        assert!(licence_matches("SHL-2.0", text));
+        assert!(!licence_matches("SHL-2.1", text));
+        assert!(!licence_matches("SHL-0.51", text));
+        assert!(!licence_matches(
+            "SHL-2.0",
+            "Solderpad Hardware Licence v2.1"
+        ));
+        assert!(!licence_matches("SHL-2.0", "Apache License\nVersion 2.0"));
+        // `Apache-2.0 WITH SHL-2.0` needs the SHL text and an Apache text, or the exact SPDX line
+        let apache = "Apache License\nVersion 2.0".to_string();
+        let expr = "Apache-2.0 WITH SHL-2.0";
+        assert_eq!(unstated(expr, &[apache.clone(), text.to_string()]), None);
+        assert_eq!(
+            unstated(expr, std::slice::from_ref(&apache)),
+            Some(expr.to_string())
+        );
+        assert_eq!(
+            unstated(
+                expr,
+                &["// SPDX-License-Identifier: Apache-2.0 WITH SHL-2.0".to_string()]
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn lgpl_2_1_text_is_recognised() {
+        let text = "                  GNU LESSER GENERAL PUBLIC LICENSE\n                       Version 2.1, February 1999\n";
+        for id in ["LGPL-2.1", "LGPL-2.1-only", "LGPL-2.1-or-later"] {
+            assert!(licence_matches(id, text), "{id}");
+        }
+        assert!(!licence_matches(
+            "LGPL-2.1-or-later",
+            "GNU LESSER GENERAL PUBLIC LICENSE\nVersion 3, 29 June 2007"
+        ));
+        assert!(!licence_matches(
+            "LGPL-2.1-or-later",
+            "GNU GENERAL PUBLIC LICENSE\nVersion 2.1"
+        ));
+        assert!(!licence_matches("MIT", text));
+        let mit = "Permission is hereby granted, free of charge".to_string();
+        assert_eq!(
+            unstated("MIT AND LGPL-2.1-or-later", &[mit]),
+            Some("LGPL-2.1-or-later".to_string())
         );
     }
 
