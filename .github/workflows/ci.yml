@@ -102,6 +102,14 @@ jobs:
           # workloads, coremark-2-iteration and microbench, took 1293 s and 513 s of simulation on the NAS.
           - variant: xiangshan.minimal
             workloads: ""
+          # occamy: elaboration only (slang took 4.7 s of wall time and 0.7 GB for full, 1.0 s and 0.7 GB for q2c2 on the NAS). The
+          # model of occamy.q2c2 is left out: it took 2314 s of wall time and 5700 s of CPU with 16 jobs on the NAS and 12 GB for the
+          # verilator process alone, which does not fit the 7 GB of a runner; its workload, hello_world, took 280 s of simulation.
+          # The model of occamy.full is estimated at 5 to 6 times that and was not built (recipe/README.md of occamy).
+          - variant: occamy.full
+            workloads: ""
+          - variant: occamy.q2c2
+            workloads: ""
     steps:
       - name: Free disk space
         run: |
