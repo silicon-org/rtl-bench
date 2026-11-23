@@ -253,6 +253,37 @@
           ];
           runScript = "bash";
         };
+        # The Python of Occamy's generators (util/occamygen, snitch_cluster clustergen, regtool, reg_rv_plic). The
+        # python-requirements.txt of snitch_cluster pins none of them, so these are the nixpkgs versions of the flake.lock.
+        # Python 3.12 and an older setuptools: regtool imports pkg_resources, which newer setuptools no longer ship.
+        occamyPy = pkgs.python312.withPackages (ps: with ps; [
+          hjson mako jsonref jsonschema pyyaml tabulate
+          (setuptools.overridePythonAttrs (_: {
+            version = "80.9.0";
+            src = pkgs.fetchPypi {
+              pname = "setuptools"; version = "80.9.0";
+              hash = "sha256-82tHQC7N52jb+vxG6OQge0NgxlTx87uER18KKGKPsZw=";
+            };
+            patches = [ ];
+            postPatch = "";
+            doCheck = false;
+          }))
+        ]);
+        # bender 0.28.2 (Apache-2.0 OR MIT). Occamy does not pin a bender; its Bender.lock is the format of the
+        # 0.28 series. The bender of nixpkgs (0.32.1) crashes at start: it links a C++ library (slang) and dies
+        # in the libstdc++ initialisation.
+        benderSource = pkgs.fetchFromGitHub {
+          owner = "pulp-platform"; repo = "bender";
+          rev = "v0.28.2";
+          hash = "sha256-OJWYhs5QmfUC1I5OkEJAeLTpklEQyQ6024wmhv1sSnA=";
+        };
+        bender = pkgs.rustPlatform.buildRustPackage {
+          pname = "bender";
+          version = "0.28.2";
+          src = benderSource;
+          cargoLock.lockFile = "${benderSource}/Cargo.lock";
+          doCheck = false;
+        };
         # The wally testbench runs bin/extractFunctionRadix.sh, whose shebang is /bin/bash;
         # NixOS has no /bin/bash, so run it with bash from the shell.
         wallyShims = pkgs.writeShellScriptBin "extractFunctionRadix.sh" ''
@@ -291,6 +322,11 @@
             gawk
             which
             wallyShims
+            # Occamy: bender resolves and lists the dependencies, verible formats the generated RTL (it changes the bytes)
+            bender
+            verible
+            # Occamy: clang-format formats the C headers of the platform (the Makefile of Occamy calls it)
+            clang-tools
             # the build.sh of gemmini-rocc-tests runs autoconf for its Makefile
             autoconf
             # Chipyard installs the espresso logic minimizer (a submodule of constellation) with cmake; the Chisel
@@ -312,6 +348,8 @@
           NAX_SPIKE = "${naxSpike}";
           NAX_ELFIO = "${naxElfio}";
           NAX_SDL2 = "${pkgs.SDL2.dev}";
+          # the Python (hjson, mako, jsonref, ...) of the Occamy generators: recipe/generate.sh puts its bin first on PATH
+          OCCAMY_PY = "${occamyPy}";
           NAX_SDL2_LIB = "${pkgs.SDL2}/lib";
         };
         # `nix develop .#bsg`: the shell that builds the workloads of BSG Manycore. Its compiler is built from source (GCC and
