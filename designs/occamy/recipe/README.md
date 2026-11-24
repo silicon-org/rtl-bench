@@ -33,7 +33,7 @@ Every other dependency is at the revision of `Bender.lock` (`bender checkout` do
 - `LGPL-2.1.txt`: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt;
 - `cva6/LICENSE`: the `LICENSE` of pulp-platform/cva6 at `6a6b8c656b8bb789d50b9c84cce1b99c74966884` (Solderpad 0.51).
 
-`rtl-bench check` recognises the SHL-2.0 and LGPL-2.1 texts.
+The sha256 of each file is in `recipe/licences.sha256`, and the script fails when one differs. `rtl-bench check` recognises the SHL-2.0 and LGPL-2.1 texts.
 
 ## Tools
 
@@ -60,7 +60,7 @@ The generator output depends on these versions. They come from the nix shell (`f
 Variants:
 
 - `full`: `target/sim/cfg/full.hjson`, unmodified (6 quadrants of 4 clusters of 9 cores).
-- `q2c2`: our configuration, `recipe/q2c2.hjson`. It is `full.hjson` with `nr_s1_quadrant = 2` and `s1_quadrant.nr_clusters = 2` (`recipe/q2c2.diff`; `generate.sh` checks that the file and the diff agree). It is the smallest variant with more than one quadrant and more than one cluster per quadrant, made for hierarchical flow work. `narrow_xbar_user_width` stays 5 as in `full.hjson` (it is wide enough for fewer clusters).
+- `q2c2`: our configuration, `recipe/q2c2.hjson`. It is `full.hjson` with `nr_s1_quadrant = 2` and `s1_quadrant.nr_clusters = 2` (`recipe/q2c2.diff`, made with fixed labels; `generate.sh` writes the diff the same way and compares). It is the smallest variant with more than one quadrant and more than one cluster per quadrant, made for hierarchical flow work. `narrow_xbar_user_width` stays 5 as in `full.hjson` (it is wide enough for fewer clusters).
 
 Generated lines of `occamy_soc.sv`: 2946 (full), 2162 (q2c2). The quadrant is a module of its own (`occamy_quadrant_s1`, instantiated once per quadrant).
 
@@ -77,11 +77,11 @@ Two generations from scratch (`generate.sh` into two work directories, both vari
 | synthesis | `rtl synthesis cv64a6_imafdc_sv39 occamy_sim snitch_cluster` | `variants/<v>/synth.f` |
 | simulation | `rtl verilator cv64a6_imafdc_sv39 occamy_sim snitch_cluster tech_cells_generic_exclude_deprecated` | `variants/<v>/sim.f` (plus the C++ files) |
 
-`cv64a6_imafdc_sv39`, `occamy_sim` and `snitch_cluster` are the targets of upstream's `VSIM_BENDER` (`target/sim/Makefile`). `synthesis` and no `simulation` target gives the generic `tech_cells_generic` (behavioural `tc_sram`, `tc_sram_impl`, `tc_clk`) and the latch based `scm`. The simulation list has no `simulation` target, because that adds the class based verification libraries (`axi_test`, `apb_test`, `spm_test`, ...), which Verilator cannot read and the testbench does not use; the testbench files (`testharness`, `tb_memory_*`, `uartdpi`) are listed for `verilator`. `tech_cells_generic_exclude_deprecated` is the switch of `tech_cells_generic` for its `src/deprecated` cells; one of them has Verilog 1995 `pmos` gates, which Verilator does not support, and nothing of Occamy uses them.
+`cv64a6_imafdc_sv39`, `occamy_sim` and `snitch_cluster` are the bender targets of upstream's simulation Makefile (`target/sim/Makefile`). `synthesis` and no `simulation` target gives the generic `tech_cells_generic` (behavioural `tc_sram`, `tc_sram_impl`, `tc_clk`) and the latch based `scm`. The simulation list has no `simulation` target, because that adds the class based verification libraries (`axi_test`, `apb_test`, `spm_test`, ...), which Verilator cannot read and the testbench does not use; the testbench files (`testharness`, `tb_memory_*`, `uartdpi`) are listed for `verilator`. `tech_cells_generic_exclude_deprecated` is the switch of `tech_cells_generic` for its `src/deprecated` cells; one of them has Verilog 1995 `pmos` gates, which Verilator does not support, and nothing of Occamy uses them.
 
 `*-defines.txt` and `*-incdirs.txt` are the defines and include directories of the lists. `bender` 0.28.2 writes the target defines of several `-t` as one broken define (`TARGET_ RTL -T SYNTHESIS ...`); the script writes `TARGET_<target>` for each instead. The define `TARGET_FLIST` is the script format of bender and is left out. `COMMON_CELLS_ASSERTS_OFF` is the define of upstream's Verilator flow (`VLT_BENDER` of `snitch_cluster`).
 
-Upstream's simulator keeps the last definition when two listed files define the same module. A file whose definitions are all redefined by later files is left out of the list (`variants/<v>/*-shadowed.txt`): the generated `clint.sv`, `clint_reg_pkg.sv` and `clint_reg_top.sv` over those of the clint repository, and `hw/future/reg_to_apb.sv` over the one of register_interface. Those files are not copied. `axi_intf.sv` of axi and `core/include/axi_intf.sv` of CVA6 both define `AXI_BUS`, `AXI_BUS_ASYNC` and `AXI_LITE` and each defines more, so both stay listed (see the slang flags).
+Upstream's simulator keeps the last definition when two listed files define the same module. A file whose definitions are all redefined by later files is left out of the list; `variants/<v>/*-shadowed.txt` has one line `<dropped path> shadowed by <kept path>` for each. The dependency copies are dropped and the generated ones are kept: the generated `clint.sv`, `clint_reg_pkg.sv` and `clint_reg_top.sv` over those of the clint repository, and `hw/future/reg_to_apb.sv` over the one of register_interface. Those files are not copied. `axi_intf.sv` of axi and `core/include/axi_intf.sv` of CVA6 both define `AXI_BUS`, `AXI_BUS_ASYNC` and `AXI_LITE` and each defines more, so both stay listed (see the slang flags).
 
 ## Synthesis view
 
@@ -181,6 +181,12 @@ The model of `full` was not built. From the q2c2 numbers: slang counts 4.68 time
 
 The build of `full` does not fit the NAS and needs a machine with at least 96 GB.
 
+
+## Costs
+
+The times and memory sizes in this file are costs of elaboration and simulation, not results of an implementation tool.
+
+The simulation model of `full` has not been built; its numbers above are an estimate.
 
 ## Other files
 

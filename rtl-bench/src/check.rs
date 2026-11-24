@@ -961,12 +961,11 @@ timeout_s = 60
     fn shl_2_0_text_is_recognised_and_told_apart() {
         let text = "Solderpad Hardware Licence v2.0\n\nThis licence operates as a wraparound licence to the Apache License Version 2.0\n";
         assert!(licence_matches("SHL-2.0", text));
-        assert!(!licence_matches("SHL-2.1", text));
         assert!(!licence_matches("SHL-0.51", text));
-        assert!(!licence_matches(
-            "SHL-2.0",
-            "Solderpad Hardware Licence v2.1"
-        ));
+        // the SHL-2.1 text (spelled `License`, `version 2.1`) is not SHL-2.0
+        let v21 = "Solderpad Hardware License, version 2.1";
+        assert!(licence_matches("SHL-2.1", v21));
+        assert!(!licence_matches("SHL-2.0", v21));
         assert!(!licence_matches("SHL-2.0", "Apache License\nVersion 2.0"));
         // `Apache-2.0 WITH SHL-2.0` needs the SHL text and an Apache text, or the exact SPDX line
         let apache = "Apache License\nVersion 2.0".to_string();
@@ -1000,6 +999,10 @@ timeout_s = 60
             "GNU GENERAL PUBLIC LICENSE\nVersion 2.1"
         ));
         assert!(!licence_matches("MIT", text));
+        assert!(!licence_matches(
+            "LGPL-2.1-or-later",
+            "GNU LESSER GENERAL PUBLIC LICENSE\nVersion 2.0"
+        ));
         let mit = "Permission is hereby granted, free of charge".to_string();
         assert_eq!(
             unstated("MIT AND LGPL-2.1-or-later", &[mit]),

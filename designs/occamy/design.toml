@@ -23,6 +23,7 @@ licence_files = [
   "licences/LGPL-2.1.txt",
 ]
 
+# Many files of the vendored CVA6 carry the SHL-2.0 or SHL-0.51 header text without an SPDX line; the licence of cva6 below covers them.
 # The dependencies of Bender.lock (and the three trees that Occamy carries in hw/vendor), with the commits
 # of the lock files. The Solderpad texts of the repositories are the same as licences/SHL-0.51.txt.
 
@@ -120,6 +121,7 @@ licence_files = ["src/deps/register_interface/LICENSE", "licences/SHL-0.51.txt"]
 repository = "https://github.com/pulp-platform/riscv-dbg"
 commit = "358f90110220adf7a083f8b65d157e836d706236"
 licence = "SHL-0.51 AND Apache-2.0"
+# dm_obi_top.sv carries the header of the Solderpad License 2.0 (SHL-2.0, no SPDX line); that text is licences/SHL-2.0.txt.
 licence_files = ["src/deps/riscv-dbg/LICENSE", "src/deps/riscv-dbg/LICENSE.SiFive", "licences/SHL-0.51.txt"]
 
 [[source.dependency]]
@@ -160,7 +162,7 @@ licence_files = ["src/occamy/hw/vendor/pulp_platform_opentitan_peripherals/LICEN
 
 [[variant]]
 id = "full"
-description = "full.hjson of upstream, unmodified: 6 quadrants of 4 clusters of 9 cores, 8 HBM2E ports."
+description = "full.hjson of upstream, unmodified: 6 quadrants of 4 clusters of 9 cores, 8 HBM2E ports. The simulation model of this variant has not been built (see recipe/README.md)."
 
 # Synthesis top: occamy_top, the chip of the generator (the testharness is the testbench around it). The
 # file list is `bender script flist-plus` of the generated tree for the targets in recipe/README.md
@@ -249,9 +251,7 @@ include_dirs = [
 ]
 # bootrom.bin, which bootrom.cc includes into the model with .incbin (the boot ROM of upstream, built from bootrom.S)
 support = ["src/occamy/target/sim/test/bootrom.bin"]
-undefine = [
-"TARGET_SYNTHESIS",
-]
+undefine = ["TARGET_SYNTHESIS"]
 defines = { TARGET_TECH_CELLS_GENERIC_EXCLUDE_DEPRECATED = "", TARGET_VERILATOR = "", COMMON_CELLS_ASSERTS_OFF = "" }
 dut = "testharness.i_occamy"
 uart_file = "uart0.log"
@@ -293,7 +293,7 @@ sources = [
 ]
 pass = { kind = "uart", contains = "Hello world!" }
 # 1225800 cycles on q2c2, counted by sim/main.cc (rising edges of clk_i; the UART at 115200 baud on a 1 GHz clock
-# is most of them). The program does not use the clusters, so full needs about as many.
+# is most of them). The program does not use the clusters. For full this limit is taken from q2c2; it is not measured on full.
 max_cycles = 2000000
 timeout_s = 3600
 
@@ -388,9 +388,7 @@ include_dirs = [
 ]
 # bootrom.bin, which bootrom.cc includes into the model with .incbin (the boot ROM of upstream, built from bootrom.S)
 support = ["src/occamy/target/sim/test/bootrom.bin"]
-undefine = [
-"TARGET_SYNTHESIS",
-]
+undefine = ["TARGET_SYNTHESIS"]
 defines = { TARGET_TECH_CELLS_GENERIC_EXCLUDE_DEPRECATED = "", TARGET_VERILATOR = "", COMMON_CELLS_ASSERTS_OFF = "" }
 dut = "testharness.i_occamy"
 uart_file = "uart0.log"
@@ -432,6 +430,6 @@ sources = [
 ]
 pass = { kind = "uart", contains = "Hello world!" }
 # 1225800 cycles on q2c2, counted by sim/main.cc (rising edges of clk_i; the UART at 115200 baud on a 1 GHz clock
-# is most of them). The program does not use the clusters, so full needs about as many.
+# is most of them). The program does not use the clusters. For full this limit is taken from q2c2; it is not measured on full.
 max_cycles = 2000000
 timeout_s = 3600

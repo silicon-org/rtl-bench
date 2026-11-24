@@ -20,9 +20,9 @@ from pathlib import Path
 VARIANTS = ["full", "q2c2"]
 # The bender targets of the file lists (recipe/README.md). Synthesis: no simulation or test target, so the
 # generic tech_cells_generic (behavioural tc_sram, tc_clk) and the latch based scm are listed. Simulation: the
-# targets of upstream's VSIM_BENDER (occamy Makefile) with `verilator` and `simulation`, without `test`.
+# bender targets of upstream's simulation Makefile (target/sim/Makefile) with `verilator`, without `test`.
 SYNTH_TARGETS = ["rtl", "synthesis", "cv64a6_imafdc_sv39", "occamy_sim", "snitch_cluster"]
-# No `simulation` target: it adds the class based verification libraries (axi_test, apb_test, spm_test, ...), which
+# The simulation list has no `simulation` target: it adds the class based verification libraries (axi_test, apb_test, spm_test, ...), which
 # Verilator cannot take and the testbench does not use; the files of the testbench (testharness, tb_memory_*,
 # uartdpi) are listed for `verilator`.
 # `tech_cells_generic_exclude_deprecated` is the switch of tech_cells_generic for its src/deprecated cells (pads
@@ -93,13 +93,15 @@ def drop_shadowed(files):
     A file whose definitions are all redefined by later files is dropped from the list (the generated clint
     over the one of the clint repository, hw/future/reg_to_apb.sv over the one of register_interface, ...).
     A file that is shadowed in part stays; slang is told to accept that (design.toml)."""
-    later, keep, dropped = set(), [], []
+    later, owner, keep, dropped = set(), {}, [], []
     for f in reversed(files):
         names = definitions(f) if f.endswith((".sv", ".v")) else set()
         if names and names <= later:
-            dropped.append(f)
+            dropped.append((f, owner[sorted(names)[0]]))
         else:
             keep.append(f)
+        for n in names:
+            owner.setdefault(n, f)
         later |= names
     return keep[::-1], dropped[::-1]
 
@@ -190,7 +192,7 @@ def main():
         for kind, targets, extra in (("synth", SYNTH_TARGETS, []), ("sim", SIM_TARGETS, SIM_DEFINES)):
             files, incdirs, defines = flist(root, targets, extra)
             files, dropped = drop_shadowed(files)
-            (vdir / f"{kind}-shadowed.txt").write_text("".join(f"src/{dst_of(f)}\n" for f in dropped))
+            (vdir / f"{kind}-shadowed.txt").write_text("".join(f"src/{dst_of(f)} shadowed by src/{dst_of(b)}\n" for f, b in dropped))
             for f in files:
                 add(dst_of(f), f)
             for d in incdirs:
