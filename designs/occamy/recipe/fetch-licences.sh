@@ -31,3 +31,6 @@ solderpad SHL-0.51 "$here/licences/SHL-0.51.txt"
 solderpad SHL-2.0 "$here/licences/SHL-2.0.txt"
 curl -fsSL https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt > "$here/licences/LGPL-2.1.txt"
 curl -fsSL https://raw.githubusercontent.com/pulp-platform/cva6/6a6b8c656b8bb789d50b9c84cce1b99c74966884/LICENSE > "$here/licences/cva6/LICENSE"
+
+# The texts are those of the commit of this recipe; a changed page or file fails the script.
+(cd "$here" && sha256sum -c recipe/licences.sha256)

@@ -43,8 +43,8 @@ git diff --quiet Bender.lock   # the lock file is unchanged
 if [ -n "$cfg_override" ]; then
   # our configuration: full.hjson with two values changed; recipe/q2c2.diff is the difference
   cp "$here/q2c2.hjson" "target/sim/$cfg_override"
-  { diff -u target/sim/cfg/full.hjson "target/sim/$cfg_override" || true; } | tail -n +3 > "$w/$variant/q2c2.diff.new"
-  tail -n +3 "$here/q2c2.diff" | diff - "$w/$variant/q2c2.diff.new" >/dev/null \
+  { diff -u --label full.hjson --label q2c2.hjson target/sim/cfg/full.hjson "target/sim/$cfg_override" || true; } > "$w/$variant/q2c2.diff.new"
+  cmp -s "$here/q2c2.diff" "$w/$variant/q2c2.diff.new" \
     || { echo "recipe/q2c2.hjson does not match recipe/q2c2.diff" >&2; exit 1; }
 fi
 

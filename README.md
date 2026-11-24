@@ -50,7 +50,7 @@ designs/<design>/
 
 - **Upstream as is.** Sources are copied from the pinned commit without change. Generated RTL (Chisel, register tops, crossbars) is the output of a recorded generator run, with its version and options in `recipe/`. A design that a tool cannot read is a gap in that tool, not in the package.
 - **Licences from the files.** A design is vendored when its licence file allows redistribution; the file is kept next to the sources and its SPDX id is recorded. A design without a licence that allows redistribution is included by reference: `design.toml` names the repository, commit and files, and `rtl-bench fetch` gets them.
-- **Every variant runs.** CI runs every workload of every variant in Verilator and checks its pass condition, and elaborates every synthesis view with slang.
+- **Every variant runs.** CI runs every workload of every variant in Verilator and checks its pass condition, and elaborates every synthesis view with slang. A variant whose simulation model does not fit a CI runner (occamy, xiangshan) is only elaborated in CI, and its simulation is run on a larger host.
 - **Every number has a source.** A clock period, an I/O delay or a cycle count names where it comes from: the upstream SDC or a published paper; a clock period is given only for open PDKs (`docs/constraints.md`).
 - **Tool-neutral.** No results of any particular implementation tool live here.
 

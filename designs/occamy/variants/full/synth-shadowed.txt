@@ -1,4 +1,4 @@
-src/deps/register_interface/src/reg_to_apb.sv
-src/deps/clint/src/clint_reg_pkg.sv
-src/deps/clint/src/clint_reg_top.sv
-src/deps/clint/src/clint.sv
+src/deps/register_interface/src/reg_to_apb.sv shadowed by src/occamy/hw/future/reg_to_apb.sv
+src/deps/clint/src/clint_reg_pkg.sv shadowed by src/generated/full/target/sim/src/clint/clint_reg_pkg.sv
+src/deps/clint/src/clint_reg_top.sv shadowed by src/generated/full/target/sim/src/clint/clint_reg_top.sv
+src/deps/clint/src/clint.sv shadowed by src/generated/full/target/sim/src/clint/clint.sv
